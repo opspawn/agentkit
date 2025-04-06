@@ -1,9 +1,10 @@
 # Core dependencies for agentkit will be added here.
+pydantic
 # Example:
-# pydantic
 # openai
 # langchain (if used)
 # chromadb-client (or other vector db client)
 
 # Testing
 pytest
+pytest-asyncio

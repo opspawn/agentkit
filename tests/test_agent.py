@@ -56,14 +56,20 @@ def test_agent_execute_task_flow():
     assert call_kwargs.get("goal") == goal
     assert "messages" in call_kwargs.get("context", {})
     assert "profile" in call_kwargs.get("context", {})
+    assert "available_tools" in call_kwargs.get("context", {}) # Check for tools context
 
-    # 2. Memory was updated
-    assert len(memory) == 2  # Goal message + Assistant result message
+    # 2. Memory was updated (Step 1 outcome, Step 2 outcome, User Goal, Final Result)
     messages = memory.get_messages()
-    assert messages[0]["role"] == "user"
-    assert messages[0]["content"] == goal
-    assert messages[1]["role"] == "assistant"
-    assert "Test objective achieved" in messages[1]["content"]
+    assert len(messages) == 4
+    # Check message order and content based on Agent implementation
+    assert messages[0]["role"] == "assistant" # Step 1 outcome
+    assert "Step 1 outcome" in messages[0]["content"]
+    assert messages[1]["role"] == "assistant" # Step 2 outcome
+    assert "Step 2 outcome" in messages[1]["content"]
+    assert messages[2]["role"] == "user"      # Goal
+    assert messages[2]["content"] == goal
+    assert messages[3]["role"] == "assistant" # Final Result
+    assert "Final Result: Test objective achieved" in messages[3]["content"]
 
     # 3. Result is correct
     assert result == "Test objective achieved"
