@@ -1,37 +1,31 @@
-"""
-Manages the registration and execution of agent tools.
-"""
-import inspect
-from typing import Any, Callable, Dict, List, Optional
+# agentkit/agentkit/tools/registry.py
+"""Manages the registration and execution of agent tools."""
 
-import inspect # Keep inspect if needed elsewhere, maybe not
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import ValidationError
 
-# Import Tool from schemas now
-from .schemas import ToolSpec, ToolResult, DEFAULT_SCHEMA, Tool, ToolError
-from .execution import execute_tool_safely # Import the safe execution function
+from agentkit.core.interfaces.tool_manager import BaseToolManager
+from .execution import execute_tool_safely
+from .schemas import DEFAULT_SCHEMA, Tool, ToolError, ToolResult, ToolSpec
 
 
-class ToolExecutionError(ToolError): # Inherit from base ToolError
+class ToolExecutionError(ToolError):
     """Custom exception for errors during tool execution."""
+
     pass
 
 
-class ToolNotFoundError(Exception):
+class ToolNotFoundError(ToolError):
     """Custom exception when a tool is not found in the registry."""
-    pass
 
-
-class ToolNotFoundError(ToolError): # Inherit from base ToolError
     pass
 
 
 # Tool class definition removed from here
 
 
-class ToolRegistry:
+class ToolRegistry(BaseToolManager):
     """
     Manages a collection of tools available to an agent.
     """
@@ -74,6 +68,18 @@ class ToolRegistry:
             raise ToolNotFoundError(f"Tool '{name}' not found.")
         return tool
 
+    def lookup_tool(self, tool_name: str) -> Optional[Tool]:
+        """
+        Find a tool by its name.
+
+        Args:
+            tool_name: The name of the tool to look up.
+
+        Returns:
+            The Tool instance if found, otherwise None.
+        """
+        return self._tools.get(tool_name)
+
     def get_tool_spec(self, name: str) -> ToolSpec:
         """
         Retrieves the specification of a tool by its name.
@@ -87,7 +93,11 @@ class ToolRegistry:
         Raises:
             ToolNotFoundError: If no tool with the given name is found.
         """
-        return self.get_tool(name).spec
+        # Use lookup_tool internally now
+        tool = self.lookup_tool(name)
+        if not tool:
+            raise ToolNotFoundError(f"Tool '{name}' not found.")
+        return tool.spec
 
     def list_tools(self) -> List[ToolSpec]:
         """
@@ -98,7 +108,7 @@ class ToolRegistry:
         """
         return [tool.spec for tool in self._tools.values()]
 
-    async def execute_tool(self, name: str, arguments: Dict[str, Any]) -> ToolResult:
+    async def execute_tool(self, name: str, arguments: Optional[Dict[str, Any]] = None) -> ToolResult:
         """
         Executes a registered tool by name with the given arguments.
 
@@ -116,7 +126,10 @@ class ToolRegistry:
         error_message = None
 
         try:
-            tool = self.get_tool(name)
+            # Use lookup_tool internally now
+            tool = self.lookup_tool(name)
+            if not tool:
+                raise ToolNotFoundError(f"Tool '{name}' not found.")
 
             # 1. Validate Input
             try:
@@ -156,9 +169,11 @@ class ToolRegistry:
             status_code = 400 if is_validation_err else 500
 
             # Return an error ToolResult
+            # Ensure tool_args is a dict, even if original arguments were None
+            error_tool_args = arguments if arguments is not None else {}
             return ToolResult(
                 tool_name=name,
-                tool_args=arguments, # Original args before validation attempt
+                tool_args=error_tool_args, # Use the potentially defaulted dict
                 output=None,
                 error=error_message,
                 status_code=status_code

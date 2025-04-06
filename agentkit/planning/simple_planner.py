@@ -1,15 +1,12 @@
-"""
-Placeholder for a simple planning component for agents.
-"""
+# agentkit/agentkit/planning/simple_planner.py
+"""Placeholder for a simple planning component for agents."""
 
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
-# Define type aliases for clarity
-Plan = List[Dict[str, Any]]  # A plan could be a list of steps (dicts)
-Context = Dict[str, Any]  # Context could be a dictionary
+from agentkit.core.interfaces.planner import BasePlanner
 
 
-class SimplePlanner:
+class SimplePlanner(BasePlanner):
     """
     A basic placeholder planner.
 
@@ -22,21 +19,22 @@ class SimplePlanner:
         """Initializes the simple planner."""
         pass  # No specific initialization needed for this placeholder
 
-    def generate_plan(self, goal: str, context: Context) -> Plan:
+    async def plan(self, goal: str, context: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
-        Generates a plan based on the goal and context.
+        Generate a sequence of steps (actions) to achieve a given goal.
 
         Args:
             goal: The objective for the agent.
-            context: The current context, potentially including memory.
+            context: Supporting information or state relevant to planning.
 
         Returns:
-            A list representing the steps in the plan.
+            A list of dictionaries, where each dictionary represents a step
+            (e.g., {'action': 'tool_name', 'args': {...}}).
             For this MVP, it returns a dummy plan.
         """
-        print(f"SimplePlanner: Received goal '{goal}' with context.")
-        # Placeholder: Return a fixed, simple plan
+        print(f"SimplePlanner: Received goal '{goal}' with context: {context}.")
+        # Placeholder: Return a fixed, simple plan asynchronously
         return [
-            {"action": "log", "details": f"Start processing goal: {goal}"},
-            {"action": "complete", "details": "Task finished (placeholder)."},
+            {"action": "log", "args": {"message": f"Start processing goal: {goal}"}},
+            {"action": "complete", "args": {"message": "Task finished (placeholder)."}},
         ]

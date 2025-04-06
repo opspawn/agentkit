@@ -121,13 +121,15 @@ async def execute_tool_safely(
             # Tool returned a ToolResult directly
             return received
         elif isinstance(received, tuple) and len(received) == 2 and isinstance(received[0], Exception):
-            # Tool raised an exception
-            exception, tb_str = received
-            return ToolResult(
-                tool_name=tool.spec.name,
-                tool_args=args,
-                output=None,
-                error=f"Tool execution failed with exception: {type(exception).__name__}: {exception}\nTraceback:\n{tb_str}",
+                # Tool raised an exception
+                exception, tb_str = received
+                # Ensure tool_args is a dict, even if original args were None
+                error_tool_args = args if args is not None else {}
+                return ToolResult(
+                    tool_name=tool.spec.name,
+                    tool_args=error_tool_args,
+                    output=None,
+                    error=f"Tool execution failed with exception: {type(exception).__name__}: {exception}\nTraceback:\n{tb_str}",
                 status_code=500, # Internal Server Error
             )
         else:

@@ -263,7 +263,9 @@ async def test_registry_execute_tool_sync_success(registry: ToolRegistry):
     result = await registry.execute_tool(name="add", arguments={"a": 10, "b": 5})
     assert isinstance(result, ToolResult)
     assert result.tool_name == "add"
-    assert result.tool_args == {"a": 10, "b": 5} # Validated args passed to safe exec
+    # Assert that tool_args contains the validated arguments
+    validated_args = AddInput(a=10, b=5).model_dump()
+    assert result.tool_args == validated_args
     assert result.output == {"result": 15}
     assert result.error is None
     assert result.status_code == 200 # From safe exec
@@ -276,7 +278,9 @@ async def test_registry_execute_tool_async_success(registry: ToolRegistry):
     result = await registry.execute_tool(name="add_async", arguments={"a": 7, "b": 3})
     assert isinstance(result, ToolResult)
     assert result.tool_name == "add_async"
-    assert result.tool_args == {"a": 7, "b": 3}
+    # Assert that tool_args contains the validated arguments
+    validated_args = AddInput(a=7, b=3).model_dump()
+    assert result.tool_args == validated_args
     assert result.output == {"result": 10}
     assert result.error is None
     assert result.status_code == 200
@@ -330,7 +334,8 @@ async def test_registry_execute_tool_not_found(registry: ToolRegistry):
     result = await registry.execute_tool(name="nonexistent", arguments={})
     assert isinstance(result, ToolResult)
     assert result.tool_name == "nonexistent"
-    assert result.tool_args == {} # Fix attribute name
+    # The code returns the original arguments in the error case
+    assert result.tool_args == {}
     assert result.output is None
     assert result.error is not None
     assert "Tool 'nonexistent' not found" in result.error
@@ -368,3 +373,36 @@ async def test_registry_execute_tool_output_validation_error(registry: ToolRegis
     # The raw, invalid output is returned by execute_tool_safely
     assert result.output == {"count": "not_an_int"}
     assert result.error is None # No error during execution itself
+
+
+@pytest.mark.asyncio
+async def test_registry_execute_tool_none_arguments(registry: ToolRegistry):
+    """Test executing a tool with arguments=None."""
+    tool = MockSyncTool() # Tool expects 'a' and 'b'
+    registry.add_tool(tool)
+    # Execute with None arguments
+    result = await registry.execute_tool(name="add", arguments=None)
+    assert isinstance(result, ToolResult)
+    assert result.tool_name == "add"
+    assert result.tool_args == {} # Defaulted to {} in error result
+    assert result.output is None
+    assert result.error is not None
+    # Check for the actual TypeError message from argument unpacking
+    assert "Error during tool preparation or input validation" in result.error
+    assert "argument after ** must be a mapping, not NoneType" in result.error
+    assert result.status_code == 500 # Should be 500 for this type of error
+
+
+@pytest.mark.asyncio
+async def test_registry_execute_tool_missing_arguments(registry: ToolRegistry):
+    """Test executing a tool by omitting the arguments parameter."""
+    tool = MockSyncToolNoSchema() # Tool uses default schema (empty object)
+    registry.add_tool(tool)
+    # Execute by omitting arguments (should default to {})
+    result = await registry.execute_tool(name="process_string")
+    assert isinstance(result, ToolResult)
+    assert result.tool_name == "process_string"
+    assert result.tool_args == {} # Default empty dict is validated
+    assert result.output == "Processed: " # Tool gets empty dict
+    assert result.error is None
+    assert result.status_code == 200

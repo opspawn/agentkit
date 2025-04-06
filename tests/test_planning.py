@@ -1,9 +1,10 @@
-"""
-Unit tests for the SimplePlanner class.
-"""
+# agentkit/tests/test_planning.py
+"""Unit tests for the SimplePlanner class."""
 
 import pytest
-from agentkit.planning.simple_planner import SimplePlanner, Context, Plan
+from typing import Dict, Any, List
+from agentkit.planning.simple_planner import SimplePlanner
+
 
 
 def test_planner_initialization():
@@ -12,13 +13,14 @@ def test_planner_initialization():
     assert isinstance(planner, SimplePlanner)
 
 
-def test_generate_plan_returns_plan():
-    """Test that generate_plan returns the expected dummy plan structure."""
+@pytest.mark.asyncio
+async def test_plan_returns_plan():
+    """Test that the async plan method returns the expected dummy plan structure."""
     planner = SimplePlanner()
     goal = "Test goal"
-    context: Context = {"messages": [{"role": "user", "content": "Hello"}]}
+    context: Dict[str, Any] = {"messages": [{"role": "user", "content": "Hello"}]}
 
-    plan: Plan = planner.generate_plan(goal=goal, context=context)
+    plan: List[Dict[str, Any]] = await planner.plan(goal=goal, context=context)
 
     # Check if the plan is a list
     assert isinstance(plan, list)
@@ -28,9 +30,11 @@ def test_generate_plan_returns_plan():
     for step in plan:
         assert isinstance(step, dict)
         assert "action" in step
-        assert "details" in step
+        assert "args" in step # Check for 'args' now
 
     # Check the specific dummy plan content
     assert plan[0]["action"] == "log"
-    assert goal in plan[0]["details"]
+    assert "message" in plan[0]["args"]
+    assert goal in plan[0]["args"]["message"]
     assert plan[1]["action"] == "complete"
+    assert "message" in plan[1]["args"]

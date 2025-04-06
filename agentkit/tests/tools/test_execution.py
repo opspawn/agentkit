@@ -68,6 +68,43 @@ class TimeoutTool(Tool):
         print("TimeoutTool finished sleeping.")
         return "Slept successfully" # Should not be reached if timeout works
 
+class AsyncSuccessTool(Tool):
+    spec = ToolSpec(
+        name="async_success_tool",
+        description="An async tool that always succeeds.",
+        input_schema=SuccessToolInput,
+        output_schema=SuccessToolOutput,
+    )
+
+    async def execute(self, args: Dict[str, int]) -> Dict[str, int]:
+        await asyncio.sleep(0.01) # Simulate async work
+        return {"result": args["value"] * 3}
+
+class AsyncErrorTool(Tool):
+    spec = ToolSpec(
+        name="async_error_tool",
+        description="An async tool that always raises an exception.",
+        input_schema=DEFAULT_SCHEMA,
+    )
+
+    async def execute(self, args: Dict):
+        await asyncio.sleep(0.01)
+        raise TypeError("Async tool failed intentionally.")
+
+class AsyncTimeoutTool(Tool):
+    spec = ToolSpec(
+        name="async_timeout_tool",
+        description="An async tool that sleeps longer than the default timeout.",
+        input_schema=TimeoutToolInput,
+    )
+
+    async def execute(self, args: Dict):
+        sleep_duration = args.get("duration", DEFAULT_TOOL_TIMEOUT + 1)
+        print(f"AsyncTimeoutTool sleeping for {sleep_duration}s...")
+        await asyncio.sleep(sleep_duration)
+        print("AsyncTimeoutTool finished sleeping.")
+        return "Slept successfully async" # Should not be reached
+
 # --- Tests ---
 
 @pytest.mark.asyncio
@@ -83,6 +120,74 @@ async def test_execute_tool_safely_success():
     assert result.output == {"result": 10}
     assert result.error is None
     assert result.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_safely_async_success():
+    """Test successful execution of an async tool."""
+    tool = AsyncSuccessTool()
+    args = {"value": 4}
+    result = await execute_tool_safely(tool, args)
+
+    assert isinstance(result, ToolResult)
+    assert result.tool_name == "async_success_tool"
+    assert result.tool_args == args
+    assert result.output == {"result": 12}
+    assert result.error is None
+    assert result.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_safely_async_exception():
+    """Test execution where an async tool raises an exception."""
+    tool = AsyncErrorTool()
+    args = {}
+    result = await execute_tool_safely(tool, args)
+
+    assert isinstance(result, ToolResult)
+    assert result.tool_name == "async_error_tool"
+    assert result.tool_args == args
+    assert result.output is None
+    assert "Tool execution failed with exception: TypeError: Async tool failed intentionally." in result.error
+    assert "Traceback" in result.error
+    assert result.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_safely_async_timeout():
+    """Test async execution that exceeds the timeout."""
+    tool = AsyncTimeoutTool()
+    args = {} # Use default sleep duration > timeout
+    timeout_duration = 0.1 # Set a very short timeout for the test
+
+    start_time = time.monotonic()
+    result = await execute_tool_safely(tool, args, timeout=timeout_duration)
+    end_time = time.monotonic()
+
+    assert isinstance(result, ToolResult)
+    assert result.tool_name == "async_timeout_tool"
+    assert result.tool_args == args
+    assert result.output is None
+    assert f"Tool execution timed out after {timeout_duration:.2f} seconds." in result.error
+    assert result.status_code == 504
+    # Check that the execution actually took roughly the timeout duration
+    assert (end_time - start_time) < (DEFAULT_TOOL_TIMEOUT / 2)
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_safely_none_args():
+    """Test execution with args=None."""
+    tool = SuccessTool() # Requires 'value' arg
+    result = await execute_tool_safely(tool, None) # Pass None for args
+
+    assert isinstance(result, ToolResult)
+    assert result.tool_name == "success_tool"
+    assert result.tool_args == {} # Defaulted to {} in error result
+    assert result.output is None
+    # The error comes from trying args['value'] when args is None.
+    assert "Tool execution failed with exception: TypeError: 'NoneType' object is not subscriptable" in result.error
+    assert "Traceback" in result.error
+    assert result.status_code == 500
 
 @pytest.mark.asyncio
 async def test_execute_tool_safely_success_returns_result():

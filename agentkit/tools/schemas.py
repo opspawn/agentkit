@@ -3,7 +3,7 @@ Defines Pydantic models and base classes for agent tools.
 """
 import inspect
 from typing import Any, Callable, Dict, Optional, Type
-from pydantic import BaseModel, Field, create_model
+from pydantic import BaseModel, Field, create_model, ConfigDict
 
 # Using Any for schema definition for now, can be refined later
 # e.g., using JSONSchema types or more specific Pydantic fields
@@ -36,8 +36,10 @@ class ToolSpec(BaseModel):
         description="Pydantic model for output validation."
     )
 
-    class Config:
-        arbitrary_types_allowed = True # Allow Type[BaseModel]
+    # Pydantic v2 configuration
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True # Allow Type[BaseModel]
+    )
 
 class ToolResult(BaseModel):
     """
