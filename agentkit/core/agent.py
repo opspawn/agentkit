@@ -11,6 +11,7 @@ from agentkit.memory.short_term import ShortTermMemory, Message
 from agentkit.planning.simple_planner import SimplePlanner, Plan, Context
 # Import tool components
 from agentkit.tools import ToolRegistry, ToolResult, ToolExecutionError, ToolNotFoundError
+from agentkit.tools.execution import execute_tool_safely # Import the safe execution function
 
 # Assuming the memory and planner modules are structured correctly
 # Adjust imports based on final package structure if needed
@@ -161,18 +162,32 @@ class Agent:
             if not tool_name:
                 return ToolResult(tool_name="unknown", tool_input=arguments, error="Missing 'tool_name' in tool_call step.")
 
-            print(f"    - Calling tool: {tool_name} with args: {arguments}")
+            print(f"    - Preparing to call tool: {tool_name} with args: {arguments}")
             try:
-                result: ToolResult = await self.tool_registry.execute_tool(tool_name, arguments)
+                # 1. Get the tool object from the registry
+                tool = self.tool_registry.get_tool(tool_name)
+
+                # 2. Execute the tool safely in a separate process
+                print(f"    - Executing tool '{tool_name}' safely...")
+                result: ToolResult = await execute_tool_safely(tool, arguments) # Use the safe executor
+
                 if result.error:
                     print(f"    - Tool execution failed: {result.error}")
                 else:
                     print(f"    - Tool execution successful. Output: {result.output}")
                 return result
-            except (ToolNotFoundError, ToolExecutionError, Exception) as e:
-                 # Reason: Catch potential errors during registry interaction or unexpected issues.
-                print(f"    - Error during tool execution attempt: {e}")
-                return ToolResult(tool_name=tool_name, tool_input=arguments, error=f"Failed to execute tool: {e}")
+
+            except ToolNotFoundError:
+                # Reason: Handle case where the planned tool doesn't exist in the registry.
+                print(f"    - Error: Tool '{tool_name}' not found in registry.")
+                return ToolResult(tool_name=tool_name, tool_args=arguments, error=f"Tool '{tool_name}' not found.")
+            except Exception as e:
+                # Reason: Catch unexpected errors during tool retrieval or safe execution setup.
+                print(f"    - Unexpected error during tool step execution: {e}")
+                # Ensure traceback is included if possible, though execute_tool_safely should capture internal ones.
+                import traceback
+                tb_str = traceback.format_exc()
+                return ToolResult(tool_name=tool_name, tool_args=arguments, error=f"Unexpected error executing step: {e}\n{tb_str}")
 
         elif action == "complete":
             # No specific execution, just return details

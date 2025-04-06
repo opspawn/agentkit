@@ -4,12 +4,17 @@ Manages the registration and execution of agent tools.
 import inspect
 from typing import Any, Callable, Dict, List, Optional
 
+import inspect # Keep inspect if needed elsewhere, maybe not
+from typing import Any, Callable, Dict, List, Optional
+
 from pydantic import ValidationError
 
-from .schemas import ToolSpec, ToolResult, DEFAULT_SCHEMA
+# Import Tool from schemas now
+from .schemas import ToolSpec, ToolResult, DEFAULT_SCHEMA, Tool, ToolError
+from .execution import execute_tool_safely # Import the safe execution function
 
 
-class ToolExecutionError(Exception):
+class ToolExecutionError(ToolError): # Inherit from base ToolError
     """Custom exception for errors during tool execution."""
     pass
 
@@ -19,58 +24,11 @@ class ToolNotFoundError(Exception):
     pass
 
 
-class Tool:
-    """
-    Represents a callable tool with its specification.
+class ToolNotFoundError(ToolError): # Inherit from base ToolError
+    pass
 
-    Attributes:
-        spec: The ToolSpec defining the tool's metadata and schemas.
-        function: The actual callable function implementing the tool's logic.
-        is_async: Boolean indicating if the tool function is asynchronous.
-    """
-    def __init__(self, spec: ToolSpec, function: Callable[..., Any]):
-        """
-        Initializes a Tool instance.
 
-        Args:
-            spec: The specification for the tool.
-            function: The callable function for the tool.
-
-        Raises:
-            ValueError: If the function is not callable.
-        """
-        if not callable(function):
-            raise ValueError("Provided function must be callable.")
-        self.spec = spec
-        self.function = function
-        self.is_async = inspect.iscoroutinefunction(function)
-
-    async def execute(self, **kwargs: Any) -> Any:
-        """
-        Executes the tool's function with validated arguments.
-
-        Handles both synchronous and asynchronous functions. Input arguments
-        are automatically validated against the tool's input schema.
-
-        Args:
-            **kwargs: Keyword arguments to pass to the tool function.
-
-        Returns:
-            The result returned by the tool function.
-
-        Raises:
-            ToolExecutionError: If the function execution fails.
-        """
-        try:
-            if self.is_async:
-                return await self.function(**kwargs)
-            else:
-                # Consider running sync functions in a thread pool executor
-                # for non-blocking behavior in async contexts if needed later.
-                return self.function(**kwargs)
-        except Exception as e:
-            # Reason: Catching broad Exception to handle any failure within the tool code.
-            raise ToolExecutionError(f"Error executing tool '{self.spec.name}': {e}") from e
+# Tool class definition removed from here
 
 
 class ToolRegistry:
@@ -79,25 +37,28 @@ class ToolRegistry:
     """
     def __init__(self):
         """Initializes an empty ToolRegistry."""
-        self._tools: Dict[str, Tool] = {}
+        self._tools: Dict[str, Tool] = {} # Type hint uses imported Tool
 
-    def add_tool(self, tool: Tool):
+    def add_tool(self, tool: Tool): # Type hint uses imported Tool
         """
-        Registers a tool in the registry.
+        Registers a tool instance in the registry.
 
         Args:
             tool: The Tool instance to register.
 
         Raises:
-            ValueError: If a tool with the same name already exists.
+            ValueError: If a tool with the same name already exists or if the provided object is not a Tool instance.
         """
+        if not isinstance(tool, Tool):
+             # Reason: Ensure only valid Tool instances are added.
+             raise ValueError("Item to be added must be an instance of the Tool class.")
         if tool.spec.name in self._tools:
             raise ValueError(f"Tool with name '{tool.spec.name}' already registered.")
         self._tools[tool.spec.name] = tool
 
-    def get_tool(self, name: str) -> Tool:
+    def get_tool(self, name: str) -> Tool: # Type hint uses imported Tool
         """
-        Retrieves a tool by its name.
+        Retrieves a tool instance by its name.
 
         Args:
             name: The name of the tool to retrieve.
@@ -169,39 +130,36 @@ class ToolRegistry:
             except ValidationError as e:
                 raise ToolExecutionError(f"Input validation failed: {e}") from e
 
-            # 2. Execute Tool
-            raw_output = await tool.execute(**validated_input)
+            # 2. Execute Tool Safely
+            # The execute_tool_safely function now handles the actual execution
+            # in a separate process and returns a ToolResult.
+            # Output validation is implicitly skipped here, as the safe executor
+            # returns the raw output or error directly within the ToolResult.
+            # If strict output validation is needed *after* safe execution,
+            # it would need to be added back here, operating on result.output.
+            result: ToolResult = await execute_tool_safely(tool, validated_input)
 
-            # 3. Validate Output
-            try:
-                if tool.spec.output_schema != DEFAULT_SCHEMA:
-                    if not isinstance(raw_output, dict):
-                         # Attempt to convert if it's a simple type expected by a single-field model
-                         # This might need refinement based on common tool return patterns
-                         if len(tool.spec.output_schema.model_fields) == 1:
-                             field_name = list(tool.spec.output_schema.model_fields.keys())[0]
-                             raw_output = {field_name: raw_output}
-                         else:
-                             raise ToolExecutionError(f"Output validation failed: Expected a dictionary-like structure for schema {tool.spec.output_schema.__name__}, got {type(raw_output)}")
-
-                    validated_output_model = tool.spec.output_schema(**raw_output)
-                    output_data = validated_output_model.model_dump()
-                elif raw_output is not None:
-                     # If default schema, but tool returned something (unexpected?)
-                     # For now, just record it as a dict if possible, else stringify
-                     output_data = raw_output if isinstance(raw_output, dict) else {"result": str(raw_output)}
-
-
-            except ValidationError as e:
-                raise ToolExecutionError(f"Output validation failed: {e}") from e
+            # Return the result obtained from the safe execution wrapper.
+            # It already contains tool_name, tool_args, output/error, status_code.
+            return result
 
         except (ToolNotFoundError, ToolExecutionError, Exception) as e:
-            # Reason: Catching known execution errors and general exceptions
-            error_message = str(e)
+            # Reason: Catch errors during tool lookup or input validation before safe execution.
+            # Also catch unexpected errors during the setup for safe execution.
+            error_message = f"Error during tool preparation or input validation: {e}"
+            import traceback
+            tb_str = traceback.format_exc()
+            error_message += f"\n{tb_str}"
+            # Determine the appropriate status code
+            # Check if the caught exception (or its cause) is a ValidationError
+            is_validation_err = isinstance(e, ValidationError) or isinstance(e.__cause__, ValidationError)
+            status_code = 400 if is_validation_err else 500
 
-        return ToolResult(
-            tool_name=name,
-            tool_input=validated_input, # Use validated input
-            output=output_data,
-            error=error_message
-        )
+            # Return an error ToolResult
+            return ToolResult(
+                tool_name=name,
+                tool_args=arguments, # Original args before validation attempt
+                output=None,
+                error=error_message,
+                status_code=status_code
+            )

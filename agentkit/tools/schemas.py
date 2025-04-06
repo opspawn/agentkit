@@ -1,7 +1,8 @@
 """
-Defines Pydantic models for specifying agent tools.
+Defines Pydantic models and base classes for agent tools.
 """
-from typing import Any, Dict, Optional, Type
+import inspect
+from typing import Any, Callable, Dict, Optional, Type
 from pydantic import BaseModel, Field, create_model
 
 # Using Any for schema definition for now, can be refined later
@@ -49,6 +50,60 @@ class ToolResult(BaseModel):
         error: An error message if the tool execution failed, None otherwise.
     """
     tool_name: str
-    tool_input: Dict[str, Any]
-    output: Optional[Dict[str, Any]] = None
+    tool_args: Dict[str, Any] # Renamed from tool_input for consistency
+    output: Optional[Any] = None # Allow non-dict output before potential validation
     error: Optional[str] = None
+    status_code: int = Field(default=200, description="HTTP-like status code (e.g., 200 OK, 400 Bad Request, 500 Error).")
+
+
+# --- Base Tool Error ---
+
+class ToolError(Exception):
+    """Base class for tool-related errors."""
+    pass
+
+
+# --- Tool Class Definition ---
+# Moved from registry.py to avoid circular imports
+
+class Tool:
+    """
+    Base class for representing a callable tool with its specification.
+    Subclasses should define the `spec` attribute and implement `execute`.
+
+    Attributes:
+        spec: The ToolSpec defining the tool's metadata and schemas.
+        is_async: Boolean indicating if the tool's execute method is asynchronous.
+                  (Note: This is determined by the subclass implementation)
+    """
+    spec: ToolSpec # Subclasses must define this
+
+    def __init__(self):
+        """Initializes the Tool instance and checks for spec."""
+        if not hasattr(self, 'spec') or not isinstance(self.spec, ToolSpec):
+            raise NotImplementedError(f"Subclasses of Tool must define a 'spec' attribute of type ToolSpec.")
+        # is_async check might be better done on the instance's execute method if needed
+        # self.is_async = inspect.iscoroutinefunction(self.execute) # This check is complex here
+
+    def execute(self, args: Dict[str, Any]) -> Any:
+        """
+        Executes the tool's logic with validated arguments.
+        Subclasses MUST implement this method.
+        It can be synchronous or asynchronous (use `async def` if needed).
+
+        Args:
+            args: A dictionary containing validated input arguments based on spec.input_schema.
+
+        Returns:
+            The result of the tool's execution. This could be a dictionary,
+            a primitive type, or a ToolResult instance directly.
+
+        Raises:
+            NotImplementedError: If the subclass does not implement execute.
+            Exception: Any exception raised during tool execution.
+        """
+        raise NotImplementedError("Subclasses must implement the 'execute' method.")
+
+    # Optional: Add an async execute placeholder if needed, but subclasses define sync/async
+    # async def execute_async(self, args: Dict[str, Any]) -> Any:
+    #     raise NotImplementedError("Subclasses must implement 'execute' or 'execute_async'.")
