@@ -23,15 +23,21 @@ def mock_genai_and_types():
 
         # Configure the mock Client class within the mocked genai module
         mock_client_instance = MagicMock()
-        mock_client_instance.models = MagicMock()
-        # Use MagicMock assuming the underlying SDK call is synchronous
-        mock_client_instance.models.generate_content = MagicMock()
+        # Mock the async interface 'aio' and its 'models' attribute
+        mock_client_instance.aio = MagicMock()
+        mock_client_instance.aio.models = MagicMock()
+        # Mock the async generate_content method
+        mock_client_instance.aio.models.generate_content = AsyncMock() # Use AsyncMock
         mock_genai_module.Client.return_value = mock_client_instance
 
         # Configure the GenerationConfig mock on the *patched types module*
         mock_genai_types_module.GenerationConfig = MagicMock()
+        # Mock Content and Part types used for constructing the 'contents' argument
+        mock_genai_types_module.Content = MagicMock()
+        mock_genai_types_module.Part = MagicMock()
+        mock_genai_types_module.Part.from_text = MagicMock()
 
-        # Yield both mocks if needed, or just the primary one if types is only used internally
+        # Yield both mocks
         yield mock_genai_module, mock_genai_types_module
 
 @pytest.fixture
@@ -66,23 +72,33 @@ async def test_google_client_generate_success(google_client, mock_genai_and_type
     mock_response.usage_metadata = {"prompt_token_count": 10, "candidates_token_count": 20, "total_token_count": 30}
 
     mock_genai, mock_genai_types = mock_genai_and_types
-    # Configure the mock generate_content method on the client instance
-    # The client instance is mock_genai.Client.return_value
-    mock_genai.Client.return_value.models.generate_content.return_value = mock_response
+    # Configure the mock aio.models.generate_content method
+    mock_genai.Client.return_value.aio.models.generate_content.return_value = mock_response
 
-    prompt = "Explain Gemini."
+    # Define input messages list
+    messages = [{"role": "user", "content": "Explain Gemini."}]
+    system_prompt = "Be concise."
     model = "gemini-1.5-pro-latest" # Model name without prefix for input
     temperature = 0.8
     max_tokens = 200
 
+    # Mock the return value of the Part factory
+    mock_part_instance = MagicMock()
+    mock_genai_types.Part.from_text.return_value = mock_part_instance
+    # Mock the return value of the Content constructor
+    mock_content_instance = MagicMock()
+    mock_genai_types.Content.return_value = mock_content_instance
+
+
     # Act
     response = await google_client.generate(
-        prompt=prompt,
+        messages=messages, # Pass messages list
         model=model,
         temperature=temperature,
         max_tokens=max_tokens,
         stop_sequences=["\n\n"],
-        top_p=0.9 # Test kwargs passthrough
+        top_p=0.9, # Test kwargs passthrough
+        system_prompt=system_prompt # Pass system prompt via kwargs
     )
 
     # Assert
@@ -93,13 +109,20 @@ async def test_google_client_generate_success(google_client, mock_genai_and_type
     assert response.finish_reason == "stop" # Mapped from 1
     assert response.usage_metadata == {"prompt_token_count": 10, "candidates_token_count": 20, "total_token_count": 30}
 
-    # Verify the mock API call to the new client method
-    mock_genai.Client.return_value.models.generate_content.assert_called_once()
-    call_args, call_kwargs = mock_genai.Client.return_value.models.generate_content.call_args
+    # Verify the mock API call to the async method
+    mock_genai.Client.return_value.aio.models.generate_content.assert_awaited_once() # Use assert_awaited_once
+    call_args, call_kwargs = mock_genai.Client.return_value.aio.models.generate_content.call_args
 
     assert call_kwargs["model"] == f"models/{model}" # Check prefix added
-    assert call_kwargs["contents"] == prompt
-    # Access the mocked GenerationConfig used in the call
+
+    # Verify the 'contents' argument structure
+    # Check that Part.from_text was called with the correct content
+    mock_genai_types.Part.from_text.assert_called_once_with(messages[0]["content"])
+    # Check that Content was called with the correct role and the mocked part
+    mock_genai_types.Content.assert_called_once_with(role=messages[0]["role"], parts=[mock_part_instance])
+    # Check that the list passed to generate_content contains the mocked Content instance
+    assert call_kwargs["contents"] == [mock_content_instance]
+
     # Verify GenerationConfig was called correctly using the *patched types mock*
     mock_genai_types.GenerationConfig.assert_called_once()
     config_call_args, config_call_kwargs = mock_genai_types.GenerationConfig.call_args
@@ -107,6 +130,7 @@ async def test_google_client_generate_success(google_client, mock_genai_and_type
     assert config_call_kwargs["max_output_tokens"] == max_tokens
     assert config_call_kwargs["stop_sequences"] == ["\n\n"]
     assert config_call_kwargs["top_p"] == 0.9
+    assert config_call_kwargs["system_instruction"] == system_prompt # Check system prompt
     # Assert the config instance passed to generate_content was the one returned by the mocked constructor
     assert call_kwargs["generation_config"] == mock_genai_types.GenerationConfig.return_value
 
@@ -116,14 +140,14 @@ async def test_google_client_generate_api_error(google_client, mock_genai_and_ty
     """Tests handling of Google API errors during generation."""
     # Arrange
     mock_genai, _ = mock_genai_and_types # Only need genai mock here
-    # Configure the mock generate_content method to raise an error
-    mock_genai.Client.return_value.models.generate_content.side_effect = Exception("Simulated Google API error")
+    # Configure the mock async generate_content method to raise an error
+    mock_genai.Client.return_value.aio.models.generate_content.side_effect = Exception("Simulated Google API error")
 
-    prompt = "This will cause a Google error."
+    messages = [{"role": "user", "content": "This will cause a Google error."}] # Use messages list
     model = "gemini-pro" # Model name without prefix
 
     # Act
-    response = await google_client.generate(prompt=prompt, model=model)
+    response = await google_client.generate(messages=messages, model=model) # Pass messages
 
     # Assert
     assert isinstance(response, LlmResponse)
@@ -132,8 +156,8 @@ async def test_google_client_generate_api_error(google_client, mock_genai_and_ty
     assert "Google Gemini API error: Simulated Google API error" in response.error
     assert response.usage_metadata is None
     assert response.finish_reason is None
-    # Check the new mock was called
-    mock_genai.Client.return_value.models.generate_content.assert_called_once()
+    # Check the async mock was called
+    mock_genai.Client.return_value.aio.models.generate_content.assert_awaited_once() # Use assert_awaited_once
 
 @pytest.mark.asyncio
 async def test_google_client_generate_blocked_prompt(google_client, mock_genai_and_types):
@@ -151,19 +175,19 @@ async def test_google_client_generate_blocked_prompt(google_client, mock_genai_a
     mock_response.candidates = [] # No candidates
 
     mock_genai, _ = mock_genai_and_types # Only need genai mock here
-    # Configure the mock generate_content method
-    mock_genai.Client.return_value.models.generate_content.return_value = mock_response
+    # Configure the mock async generate_content method
+    mock_genai.Client.return_value.aio.models.generate_content.return_value = mock_response
 
     # --- Debug: Verify PropertyMock raises error ---
     with pytest.raises(ValueError, match="Content blocked"):
         _ = mock_response.text
     # --- End Debug ---
 
-    prompt = "A potentially unsafe prompt."
+    messages = [{"role": "user", "content": "A potentially unsafe prompt."}] # Use messages list
     model = "gemini-pro" # Model name without prefix
 
     # Act
-    response = await google_client.generate(prompt=prompt, model=model)
+    response = await google_client.generate(messages=messages, model=model) # Pass messages
 
     # Assert
     assert isinstance(response, LlmResponse)
@@ -172,8 +196,8 @@ async def test_google_client_generate_blocked_prompt(google_client, mock_genai_a
     assert response.error is None # Not an API error, but a safety block
     assert response.finish_reason == "safety" # Overridden due to block
     assert response.usage_metadata is None
-    # Check the new mock was called
-    mock_genai.Client.return_value.models.generate_content.assert_called_once()
+    # Check the async mock was called
+    mock_genai.Client.return_value.aio.models.generate_content.assert_awaited_once() # Use assert_awaited_once
 
 
 # Use the mock_genai_and_types fixture which handles patching

@@ -32,57 +32,66 @@ class GoogleClient(BaseLlmClient):
 
     async def generate(
         self,
-        prompt: str,
+        messages: List[Dict[str, str]], # Changed from prompt: str
         model: Optional[str] = "gemini-pro", # Default model
         stop_sequences: Optional[List[str]] = None,
         temperature: float = 0.7,
         max_tokens: Optional[int] = None, # Called max_output_tokens in Gemini
-            **kwargs: Any # Keep kwargs for potential future use, though less direct mapping now
+        **kwargs: Any
     ) -> LlmResponse:
         """
-        Generates text based on a prompt using the Google Gemini API.
+        Generates text based on a list of messages using the Google Gemini API.
 
         Args:
-            prompt: The input prompt for the LLM.
+            messages: A list of message dictionaries, e.g., [{"role": "user", "content": "..."}].
+                      The roles should typically alternate between "user" and "model".
             model: The specific model identifier to use (e.g., "gemini-pro", "gemini-1.5-pro-latest").
             stop_sequences: List of sequences to stop generation at.
             temperature: Sampling temperature.
             max_tokens: Maximum number of tokens (output tokens) to generate.
-            **kwargs: Additional arguments for the Gemini API (e.g., top_p, top_k).
+            **kwargs: Additional arguments for the Gemini API (e.g., top_p, top_k, system_prompt).
 
         Returns:
             An LlmResponse object containing the generated content and metadata.
         """
         try:
-            # 1. Prepare GenerationConfig (using new SDK types)
+            # 1. Convert input messages to SDK's Content format
+            sdk_contents = []
+            for msg in messages:
+                role = msg.get("role")
+                content = msg.get("content", "")
+                # Gemini uses 'model' role for assistant messages
+                if role and role.lower() == "assistant":
+                    role = "model"
+                if role in ["user", "model"]: # Only include user/model roles
+                     sdk_contents.append(genai_types.Content(role=role, parts=[genai_types.Part.from_text(content)]))
+                # TODO: Handle other potential roles or content types if needed
+
+            # 2. Prepare GenerationConfig, including system_prompt from kwargs
+            system_prompt = kwargs.pop("system_prompt", None) # Extract system prompt
             config_params = {
                 "temperature": temperature,
                 "max_output_tokens": max_tokens,
                 "stop_sequences": stop_sequences,
                 "top_p": kwargs.get("top_p"),
                 "top_k": kwargs.get("top_k"),
+                "system_instruction": system_prompt, # Add system instruction here
+                # Pass through any other valid GenerationConfig kwargs
+                **{k: v for k, v in kwargs.items() if k in genai_types.GenerationConfig.__annotations__}
             }
+            # Filter out None values as SDK expects concrete values or omission
             filtered_config_params = {k: v for k, v in config_params.items() if v is not None}
             generation_config = genai_types.GenerationConfig(**filtered_config_params)
 
-            # 2. Call client.models.generate_content (new SDK uses this structure)
-            # The new SDK handles async automatically if client is created in async context
-            # For now, assume sync call structure based on docs, adjust if needed for BaseLlmClient async requirement
-            # NOTE: The BaseLlmClient requires an async generate method. The new google-genai SDK
-            # seems to handle async implicitly or via a separate async client.
-            # We might need to wrap the sync call or investigate async client usage.
-            # For now, let's assume a direct call works and adjust if runtime errors occur.
-
-            # TODO: Investigate async client usage for google-genai if direct call fails in async context.
-            response = self.client.models.generate_content(
+            # 3. Call the async generate_content method
+            response = await self.client.aio.models.generate_content( # Use await and client.aio
                 model=f"models/{model}", # Models often need 'models/' prefix
-                contents=prompt,
+                contents=sdk_contents, # Pass converted messages
                 generation_config=generation_config,
-                # safety_settings=...
+                # safety_settings=... # Can be added to config_params if needed
             )
 
-            # 3. Map the successful response to LlmResponse
-            # Access finish_reason (assuming similar structure, needs verification)
+            # 4. Map the successful response to LlmResponse
             finish_reason = "unknown"
             if response.candidates:
                  # Assuming finish_reason is an enum or string directly accessible
