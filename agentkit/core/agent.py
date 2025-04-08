@@ -11,6 +11,7 @@ from .interfaces import (
     BaseSecurityManager,
     BaseToolManager,
 )
+from .interfaces.planner import Plan, PlanStep # Import Plan and PlanStep for type hints
 
 # Concrete Implementation Imports (Relative)
 from ..memory.short_term import ShortTermMemory
@@ -51,13 +52,32 @@ class Agent:
             tool_manager: An instance implementing BaseToolManager. Defaults to ToolRegistry.
             security_manager: An instance implementing BaseSecurityManager. Defaults to PlaceholderSecurityManager.
             profile: A dictionary containing agent configuration, persona, etc. Defaults to an empty dict.
+
+        Raises:
+            TypeError: If any dependency is not an instance of its corresponding base class.
         """
-        self.planner: BasePlanner = planner if planner is not None else SimplePlanner()
-        self.memory: BaseMemory = memory if memory is not None else ShortTermMemory()
-        # Default to ToolRegistry which implements BaseToolManager
-        self.tool_manager: BaseToolManager = tool_manager if tool_manager is not None else ToolRegistry()
-        self.security_manager: BaseSecurityManager = security_manager if security_manager is not None else PlaceholderSecurityManager()
-        self.profile: Dict[str, Any] = profile if profile is not None else {}
+        # Assign defaults first
+        _planner = planner if planner is not None else SimplePlanner()
+        _memory = memory if memory is not None else ShortTermMemory()
+        _tool_manager = tool_manager if tool_manager is not None else ToolRegistry()
+        _security_manager = security_manager if security_manager is not None else PlaceholderSecurityManager()
+        _profile = profile if profile is not None else {}
+
+        # Validate types before assigning to self
+        if not isinstance(_planner, BasePlanner):
+            raise TypeError("planner must be an instance of BasePlanner")
+        if not isinstance(_memory, BaseMemory):
+            raise TypeError("memory must be an instance of BaseMemory")
+        if not isinstance(_tool_manager, BaseToolManager):
+            raise TypeError("tool_manager must be an instance of BaseToolManager")
+        if not isinstance(_security_manager, BaseSecurityManager):
+            raise TypeError("security_manager must be an instance of BaseSecurityManager")
+
+        self.planner: BasePlanner = _planner
+        self.memory: BaseMemory = _memory
+        self.tool_manager: BaseToolManager = _tool_manager
+        self.security_manager: BaseSecurityManager = _security_manager
+        self.profile: Dict[str, Any] = _profile
 
         # Attempt to get tool count if the tool_manager is a ToolRegistry (common case)
         tool_count = "N/A"
@@ -115,8 +135,8 @@ class Agent:
 
         # 2. Generate plan
         try:
-            plan: List[Dict[str, Any]] = await self.planner.plan(goal=goal, context=context)
-            print(f"Plan generated with {len(plan)} steps.")
+            plan_obj: Plan = await self.planner.plan(goal=goal, context=context) # Expect a Plan object
+            print(f"Plan generated with {len(plan_obj.steps)} steps.")
         except Exception as e:
             # Handle planner errors
             error_msg = f"Planning failed: {e}"
@@ -125,7 +145,7 @@ class Agent:
             return error_msg # Return error immediately
 
         # Handle empty plan
-        if not plan:
+        if not plan_obj or not plan_obj.steps: # Check the steps list within the Plan object
             empty_plan_msg = "Planner returned an empty plan. Task cannot proceed."
             print(f"    - {empty_plan_msg}")
             await self.memory.add_message(role="assistant", content=empty_plan_msg)
@@ -136,17 +156,20 @@ class Agent:
         final_result: Any = None
         step_results: List[Any] = []  # Store results of each step if needed
 
-        for i, step in enumerate(plan):
-            print(f"  - Executing Step {i + 1}: {step}")
+        for i, step in enumerate(plan_obj.steps): # Iterate through plan_obj.steps
+            # Convert PlanStep back to dict for logging/context if needed, or use attributes directly
+            step_dict = step.model_dump() # Use Pydantic's model_dump for dict representation
+            print(f"  - Executing Step {i + 1}: {step_dict}")
 
-            # Security Check (Placeholder)
-            action = step.get('action', 'unknown')
-            action_desc = action
-            if action == 'tool_call':
-                # Correctly access tool_name within args
-                tool_name = step.get('args', {}).get('tool_name', '')
-                action_desc = f"{action}:{tool_name}"
+            # Security Check (Placeholder) - Use step attributes directly
+            action_type = step.action_type # Use attribute
+            action_desc = action_type
+            if action_type == 'tool_call':
+                # Access tool_name within details attribute
+                tool_name = step.details.get('tool_name', '')
+                action_desc = f"{action_type}:{tool_name}"
 
+            # Pass the PlanStep object directly to check_permissions context
             if not await self.security_manager.check_permissions(action=action_desc, context={"step": step}):
                 permission_error_msg = f"Permission denied for action '{action_desc}'."
                 print(f"    - Step failed: {permission_error_msg}")
@@ -155,7 +178,7 @@ class Agent:
                 await self.memory.add_message(role="assistant", content=f"Step {i+1} outcome: {permission_error_msg}")
                 break # Stop execution on permission denial
 
-            step_outcome = await self._execute_step(step)
+            step_outcome = await self._execute_step(step) # Pass the PlanStep object
             step_results.append(step_outcome)  # Store outcome (e.g., ToolResult)
 
             # Update memory after each step
@@ -190,10 +213,11 @@ class Agent:
             if step_failed:
                  break # Stop execution on error
 
-            # Check for completion *after* checking for errors
-            if step.get("action") == "complete":
-                final_result = step.get("args", {}).get("message", "Task completed successfully.")
-                print(f"    - Task marked complete.")
+            # Check for completion *after* checking for errors - Use step attributes
+            if step.action_type == "final_answer": # Check action_type
+                final_result = step.details.get("answer", "Task completed successfully.") # Get answer from details
+                print(f"    - Task marked complete (Final Answer).")
+                # Memory already updated above with the final answer as step_outcome
                 # Memory already updated above
                 break  # Stop execution on completion
 
@@ -212,14 +236,14 @@ class Agent:
 
         return final_result
 
-    async def _execute_step(self, step: Dict[str, Any]) -> Any: # Renamed from execute_task_async
+    async def _execute_step(self, step: PlanStep) -> Any: # Accept PlanStep object
         """Executes a single step from the plan using the appropriate manager."""
-        action = step.get("action")
-        args = step.get("args", {}) # Use 'args' consistently with planner output
+        action_type = step.action_type # Use attribute
+        details = step.details # Use attribute
 
-        if action == "tool_call":
-            tool_name = args.get("tool_name") # Expect tool_name within args
-            tool_args = args.get("arguments", {}) # Expect arguments within args
+        if action_type == "tool_call":
+            tool_name = details.get("tool_name") # Get from details
+            tool_args = details.get("arguments", {}) # Get from details
             if not tool_name:
                 # Reason: Ensure tool_name is provided for tool calls.
                 return ToolResult(tool_name="unknown", tool_args=tool_args, error="Missing 'tool_name' in tool_call args.", status_code=400)
@@ -234,16 +258,23 @@ class Agent:
                 print(f"    - Tool execution successful (reported by manager). Output: {result.output}")
             return result # Return the result directly from the manager
 
-        elif action == "complete":
-            # No specific execution, just return message from args
-            return args.get("message", "Completion step executed.")
-        elif action == "log":
-             # Simple logging action
-             log_message = args.get("message", "Log step executed.")
-             print(f"    - Log: {log_message}")
-             return f"Log action executed: {log_message}"
+        elif action_type == "final_answer":
+            # No specific execution, just return the answer from details
+            return details.get("answer", "Final answer step executed.")
+        # Remove log action type as it's not in PlanStep Literal
+        # elif action_type == "log":
+        #      # Simple logging action
+        #      log_message = details.get("message", "Log step executed.")
+        #      print(f"    - Log: {log_message}")
+        #      return f"Log action executed: {log_message}"
+        elif action_type == "error":
+             # Handle error step type if planner returns it
+             error_message = details.get("message", "Error step executed.")
+             print(f"    - Error Step: {error_message}")
+             return f"Error action executed: {error_message}"
         else:
             # Handle unknown actions by returning an error message
-            unknown_action_msg = f"Unknown action type: '{action}'."
+            # This case might be less likely now with Literal type hint
+            unknown_action_msg = f"Unknown action type: '{action_type}'."
             print(f"    - {unknown_action_msg}")
             return unknown_action_msg # Return the error message as the outcome

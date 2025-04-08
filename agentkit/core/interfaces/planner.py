@@ -25,7 +25,7 @@ class BasePlanner(abc.ABC):
     """Abstract base class for agent planning modules."""
 
     @abc.abstractmethod
-    async def plan(self, goal: str, context: Dict[str, Any]) -> List[Dict[str, Any]]:
+    async def plan(self, goal: str, context: Dict[str, Any]) -> Plan: # Changed return type annotation
         """
         Generate a sequence of steps (actions) to achieve a given goal.
 

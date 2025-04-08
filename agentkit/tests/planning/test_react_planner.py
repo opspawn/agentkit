@@ -1,12 +1,14 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import json # For formatting expected input
 from pydantic import BaseModel
 
 from agentkit.core.interfaces.llm_client import BaseLlmClient, LlmResponse
 from agentkit.core.interfaces.planner import Plan, PlanStep
 from agentkit.planning.react_planner import ReActPlanner
 from agentkit.tools.schemas import ToolSpec
+from agentkit.tools.mcp_proxy import mcp_proxy_tool_spec # Import the spec
 
 # --- Mocks and Fixtures ---
 
@@ -172,3 +174,51 @@ def test_react_planner_init_invalid_client():
     """Tests that planner initialization fails with invalid LLM client type."""
     with pytest.raises(TypeError, match="llm_client must be an instance of BaseLlmClient"):
         ReActPlanner(llm_client=MagicMock()) # Pass a generic mock, not BaseLlmClient
+
+
+@pytest.mark.asyncio
+async def test_react_planner_plan_mcp_proxy_call(react_planner, mock_llm_client):
+    """Tests generating a plan step that calls the mcp_proxy_tool."""
+    # Arrange
+    goal = "Use the external weather tool to find the weather in London."
+    # Include the MCP proxy tool spec along with any other tools
+    tools = [add_tool_spec, mcp_proxy_tool_spec]
+    history = [{"Thought": "I need to use an external tool via the MCP proxy."}]
+
+    # Mock LLM response for an MCP proxy tool call
+    mcp_input = {
+        "server_name": "weather_server",
+        "tool_name": "get_weather",
+        "arguments": {"city": "London"}
+    }
+    # Format input exactly as the LLM might produce it (JSON string)
+    mcp_input_json_str = json.dumps(mcp_input)
+
+    llm_response_text = f"""
+Thought: The user wants weather information, which requires the external weather tool accessed via the MCP proxy.
+Action: Tool Name: mcp_proxy_tool Input: {mcp_input_json_str}
+"""
+    mock_llm_client.generate.return_value = LlmResponse(
+        content=llm_response_text, model_used="test-model", error=None
+    )
+
+    # Act
+    plan = await react_planner.plan(goal=goal, available_tools=tools, history=history)
+
+    # Assert
+    assert isinstance(plan, Plan)
+    assert len(plan.steps) == 1
+    step = plan.steps[0]
+    assert isinstance(step, PlanStep)
+    assert step.action_type == "tool_call"
+    assert step.details["tool_name"] == "mcp_proxy_tool"
+    # Assert the parsed input dictionary matches the expected structure
+    assert step.details["tool_input"] == mcp_input
+
+    # Verify LLM call
+    mock_llm_client.generate.assert_awaited_once()
+    call_args, call_kwargs = mock_llm_client.generate.call_args
+    assert "Goal: Use the external weather tool" in call_kwargs["prompt"]
+    assert f"- {mcp_proxy_tool_spec.name}: {mcp_proxy_tool_spec.description}" in call_kwargs["prompt"]
+    assert "Thought: I need to use an external tool via the MCP proxy." in call_kwargs["prompt"]
+    assert call_kwargs["stop_sequences"] == ["\nObservation:"]

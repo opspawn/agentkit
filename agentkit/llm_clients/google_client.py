@@ -101,18 +101,15 @@ class GoogleClient(BaseLlmClient):
 
             # 3. Map the successful response to LlmResponse, handling potential ValueError for blocked content
             try:
-                content = response.text
-                finish_reason = "unknown"
-                if response.candidates:
-                    raw_finish_reason = getattr(response.candidates[0], 'finish_reason', 'UNKNOWN')
-                    finish_reason = str(raw_finish_reason).split('.')[-1].lower()
-                usage_metadata = getattr(response, 'usage_metadata', None)
+                content = response.text # Revert back to using .text attribute
+                # Finish reason and usage metadata are already calculated above
+                usage_metadata = getattr(response, 'usage_metadata', None) # Get usage metadata
 
                 return LlmResponse(
                     content=content,
                     model_used=model,
-                    usage_metadata=usage_metadata,
-                    finish_reason=finish_reason,
+                    usage_metadata=usage_metadata, # Use calculated value
+                    finish_reason=finish_reason, # Use calculated value
                     error=None,
                 )
             except ValueError:
@@ -127,7 +124,7 @@ class GoogleClient(BaseLlmClient):
                     error=None,
                 )
 
-        except Exception as e:
+        except Exception as e: # Keep outer exception handling
             # 4. & 6. Handle potential API or other exceptions during the call
             # Need to identify specific Google API errors vs general errors
             # Example: google.api_core.exceptions.GoogleAPIError
