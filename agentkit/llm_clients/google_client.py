@@ -90,29 +90,36 @@ class GoogleClient(BaseLlmClient):
                  # Convert enum to string if necessary (example)
                  finish_reason = str(raw_finish_reason).split('.')[-1].lower() # Example conversion
 
-            # Extract text content safely
-            content = ""
+            # 3. Map the successful response to LlmResponse, handling potential ValueError for blocked content
             try:
                 content = response.text
+                finish_reason = "unknown"
+                if response.candidates:
+                    raw_finish_reason = getattr(response.candidates[0], 'finish_reason', 'UNKNOWN')
+                    finish_reason = str(raw_finish_reason).split('.')[-1].lower()
+                usage_metadata = getattr(response, 'usage_metadata', None)
+
+                return LlmResponse(
+                    content=content,
+                    model_used=model,
+                    usage_metadata=usage_metadata,
+                    finish_reason=finish_reason,
+                    error=None,
+                )
             except ValueError:
-                # Handle blocked prompt (assuming similar feedback structure)
+                # Handle blocked prompt specifically
                 block_reason = getattr(getattr(response, 'prompt_feedback', None), 'block_reason', None)
-                content = f"Blocked: {block_reason.name if block_reason else 'Unknown Reason'}"
-                finish_reason = "safety"
-
-            # Extract usage metadata (assuming similar structure)
-            usage_metadata = getattr(response, 'usage_metadata', None)
-
-            return LlmResponse(
-                content=content,
-                model_used=model, # The request specified the model
-                usage_metadata=usage_metadata, # May be None
-                finish_reason=finish_reason,
-                error=None,
-            )
+                blocked_content = f"Blocked: {block_reason.name if block_reason else 'Unknown Reason'}"
+                return LlmResponse(
+                    content=blocked_content,
+                    model_used=model,
+                    usage_metadata=None, # No usage data for blocked prompts
+                    finish_reason="safety", # Set finish reason to safety
+                    error=None,
+                )
 
         except Exception as e:
-            # 4. & 6. Handle potential exceptions and map errors
+            # 4. & 6. Handle potential API or other exceptions during the call
             # Need to identify specific Google API errors vs general errors
             # Example: google.api_core.exceptions.GoogleAPIError
             # For now, catch generic Exception

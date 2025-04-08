@@ -2,31 +2,54 @@ import pytest
 import os
 from unittest.mock import AsyncMock, patch, MagicMock
 
+# Import necessary types from the real library for type hinting if needed
+# but the library itself will be mocked during tests.
 from anthropic import AnthropicError
 from anthropic.types import Message, TextBlock, Usage
 
+# Import the client AFTER potential patches are applied in fixtures/tests
 from agentkit.llm_clients.anthropic_client import AnthropicClient
 from agentkit.core.interfaces.llm_client import LlmResponse
 
-# Fixture to provide a mock API key
+# --- Fixtures ---
+
 @pytest.fixture(autouse=True)
-def mock_anthropic_api_key(monkeypatch):
+def mock_anthropic_api_key_env(monkeypatch):
+    """Fixture to provide a mock Anthropic API key environment variable."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test_key_anthropic_456")
 
-# Fixture for the AnthropicClient instance
+# Use patch for the AsyncAnthropic class where it's imported in the client code
 @pytest.fixture
-def anthropic_client():
-    return AnthropicClient()
+def mock_anthropic():
+    """Fixture to mock the AsyncAnthropic class used by AnthropicClient."""
+    with patch('agentkit.llm_clients.anthropic_client.AsyncAnthropic') as mock_async_anthropic_class:
+        # Configure the mock instance that the mocked class will return
+        mock_client_instance = AsyncMock() # Use AsyncMock for the instance
+        mock_client_instance.messages = AsyncMock() # Mock the messages attribute
+        mock_client_instance.messages.create = AsyncMock() # Mock the create method
+        mock_async_anthropic_class.return_value = mock_client_instance
+        yield mock_async_anthropic_class # Yield the mocked class
+
+@pytest.fixture
+def anthropic_client(mock_anthropic): # Depends on the mocked AsyncAnthropic class
+    """Fixture for the AnthropicClient instance, ensuring AsyncAnthropic is mocked."""
+    # Reset the mock before creating the client instance for this test
+    mock_anthropic.reset_mock()
+    client = AnthropicClient()
+    # Assert AsyncAnthropic was called (without args, relying on env var)
+    mock_anthropic.assert_called_once_with(api_key="test_key_anthropic_456", base_url=None)
+    # Ensure the internal client is the mocked one
+    assert client.client == mock_anthropic.return_value
+    return client
 
 # --- Test Cases ---
 
 @pytest.mark.asyncio
-@patch("anthropic.AsyncAnthropic", new_callable=MagicMock)
-async def test_anthropic_client_generate_success(mock_async_anthropic_class, anthropic_client):
+async def test_anthropic_client_generate_success(anthropic_client, mock_anthropic):
     """Tests successful generation using the Anthropic client."""
     # Arrange
-    mock_client_instance = AsyncMock()
-    mock_async_anthropic_class.return_value = mock_client_instance
+    # The mock instance is mock_anthropic.return_value
+    mock_client_instance = mock_anthropic.return_value
 
     mock_response_message = Message(
         id="msg_123",
@@ -37,7 +60,8 @@ async def test_anthropic_client_generate_success(mock_async_anthropic_class, ant
         type="message",
         usage=Usage(input_tokens=8, output_tokens=12),
     )
-    mock_client_instance.messages.create = AsyncMock(return_value=mock_response_message)
+    # Configure the mock create method on the client instance
+    mock_client_instance.messages.create.return_value = mock_response_message
 
     prompt = "Tell me about Claude."
     model = "claude-3-test"
@@ -71,6 +95,7 @@ async def test_anthropic_client_generate_success(mock_async_anthropic_class, ant
     mock_client_instance.messages.create.assert_awaited_once()
     call_args, call_kwargs = mock_client_instance.messages.create.call_args
     assert call_kwargs["model"] == model
+    # Anthropic expects list of messages, check structure
     assert call_kwargs["messages"] == [{"role": "user", "content": prompt}]
     assert call_kwargs["temperature"] == temperature
     assert call_kwargs["max_tokens"] == max_tokens
@@ -79,15 +104,11 @@ async def test_anthropic_client_generate_success(mock_async_anthropic_class, ant
     assert call_kwargs["top_k"] == 5 # Verify kwargs passthrough
 
 @pytest.mark.asyncio
-@patch("anthropic.AsyncAnthropic", new_callable=MagicMock)
-async def test_anthropic_client_generate_api_error(mock_async_anthropic_class, anthropic_client):
+async def test_anthropic_client_generate_api_error(anthropic_client, mock_anthropic):
     """Tests handling of Anthropic API errors during generation."""
     # Arrange
-    mock_client_instance = AsyncMock()
-    mock_async_anthropic_class.return_value = mock_client_instance
-    mock_client_instance.messages.create = AsyncMock(
-        side_effect=AnthropicError("Simulated Anthropic API error")
-    )
+    mock_client_instance = mock_anthropic.return_value
+    mock_client_instance.messages.create.side_effect = AnthropicError("Simulated Anthropic API error")
 
     prompt = "This prompt will cause an API error."
     model = "claude-3-sonnet-20240229"
@@ -105,15 +126,11 @@ async def test_anthropic_client_generate_api_error(mock_async_anthropic_class, a
     mock_client_instance.messages.create.assert_awaited_once()
 
 @pytest.mark.asyncio
-@patch("anthropic.AsyncAnthropic", new_callable=MagicMock)
-async def test_anthropic_client_generate_unexpected_error(mock_async_anthropic_class, anthropic_client):
+async def test_anthropic_client_generate_unexpected_error(anthropic_client, mock_anthropic):
     """Tests handling of unexpected errors during generation."""
     # Arrange
-    mock_client_instance = AsyncMock()
-    mock_async_anthropic_class.return_value = mock_client_instance
-    mock_client_instance.messages.create = AsyncMock(
-        side_effect=Exception("A different kind of failure")
-    )
+    mock_client_instance = mock_anthropic.return_value
+    mock_client_instance.messages.create.side_effect = Exception("A different kind of failure")
 
     prompt = "Trigger unexpected failure."
     model = "claude-3-haiku-20240307"
@@ -131,19 +148,17 @@ async def test_anthropic_client_generate_unexpected_error(mock_async_anthropic_c
     mock_client_instance.messages.create.assert_awaited_once()
 
 @pytest.mark.asyncio
-@patch("anthropic.AsyncAnthropic", new_callable=MagicMock)
-async def test_anthropic_client_generate_default_max_tokens(mock_async_anthropic_class, anthropic_client):
+async def test_anthropic_client_generate_default_max_tokens(anthropic_client, mock_anthropic):
     """Tests that a default max_tokens is used if none is provided."""
     # Arrange
-    mock_client_instance = AsyncMock()
-    mock_async_anthropic_class.return_value = mock_client_instance
+    mock_client_instance = mock_anthropic.return_value
 
     mock_response_message = Message(
         id="msg_456", content=[TextBlock(text="Default tokens.", type="text")],
         model="claude-3-test", role="assistant", stop_reason="max_tokens",
         type="message", usage=Usage(input_tokens=5, output_tokens=1024)
     )
-    mock_client_instance.messages.create = AsyncMock(return_value=mock_response_message)
+    mock_client_instance.messages.create.return_value = mock_response_message
 
     # Act - Call generate without max_tokens argument
     response = await anthropic_client.generate(prompt="Test default tokens", max_tokens=None)
@@ -155,37 +170,47 @@ async def test_anthropic_client_generate_default_max_tokens(mock_async_anthropic
     call_args, call_kwargs = mock_client_instance.messages.create.call_args
     assert call_kwargs["max_tokens"] == 1024 # Check the default was applied
 
-def test_anthropic_client_init_missing_key(monkeypatch):
+# Use the mock_anthropic fixture which handles patching
+def test_anthropic_client_init_missing_key(monkeypatch, mock_anthropic):
     """Tests that initialization fails if the API key is missing."""
     # Arrange
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False) # Ensure env var is not set
+    mock_anthropic.reset_mock() # Reset mock since it's autoused via env var fixture
 
     # Act & Assert
     with pytest.raises(ValueError, match="Anthropic API key not provided"):
         AnthropicClient()
+    mock_anthropic.assert_not_called() # Ensure constructor wasn't called
 
-def test_anthropic_client_init_with_key_arg():
+# Use the mock_anthropic fixture which handles patching
+def test_anthropic_client_init_with_key_arg(mock_anthropic):
     """Tests initialization with the API key passed as an argument."""
     # Arrange
     api_key = "arg_key_anthropic_789"
+    mock_anthropic.reset_mock() # Reset mock before test
 
     # Act
-    with patch("anthropic.AsyncAnthropic") as mock_async_anthropic_class:
-        client = AnthropicClient(api_key=api_key)
+    client = AnthropicClient(api_key=api_key)
 
     # Assert
     assert client.api_key == api_key
-    mock_async_anthropic_class.assert_called_once_with(api_key=api_key, base_url=None)
+    # Check that the *mocked* AsyncAnthropic class was called correctly
+    mock_anthropic.assert_called_once_with(api_key=api_key, base_url=None)
+    assert client.client == mock_anthropic.return_value # Check internal client
 
-def test_anthropic_client_init_with_base_url():
+# Use the mock_anthropic fixture which handles patching
+def test_anthropic_client_init_with_base_url(mock_anthropic):
     """Tests initialization with a custom base URL."""
     # Arrange
     base_url = "http://localhost:8081/anthropic"
+    api_key_from_env = "test_key_anthropic_456" # From mock_anthropic_api_key_env
+    mock_anthropic.reset_mock() # Reset mock before test
 
     # Act
-    with patch("anthropic.AsyncAnthropic") as mock_async_anthropic_class:
-        client = AnthropicClient(base_url=base_url) # Relies on mock_anthropic_api_key fixture
+    client = AnthropicClient(base_url=base_url) # Relies on env var fixture for key
 
     # Assert
-    assert client.api_key == "test_key_anthropic_456" # From fixture
-    mock_async_anthropic_class.assert_called_once_with(api_key="test_key_anthropic_456", base_url=base_url)
+    assert client.api_key == api_key_from_env # From fixture
+    # Check that the *mocked* AsyncAnthropic class was called correctly
+    mock_anthropic.assert_called_once_with(api_key=api_key_from_env, base_url=base_url)
+    assert client.client == mock_anthropic.return_value # Check internal client

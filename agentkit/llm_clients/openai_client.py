@@ -48,9 +48,12 @@ class OpenAiClient(BaseLlmClient):
             An LlmResponse object containing the generated content and metadata.
         """
         # 1. Format the prompt into the required 'messages' structure.
-        #    For simplicity, assume the prompt is a single user message.
-        #    More complex history/role handling could be added later.
-        messages = [{"role": "user", "content": prompt}]
+        #    Include system prompt if provided in kwargs.
+        messages = []
+        system_prompt = kwargs.pop("system_prompt", None) # Extract system_prompt from kwargs
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
 
         # 2. Prepare API parameters
         api_params = {

@@ -58,7 +58,12 @@ class OpenRouterClient(BaseLlmClient):
             raise ValueError("Model identifier is required for OpenRouterClient.")
 
         # 1. Format prompt to messages (same as OpenAiClient)
-        messages = [{"role": "user", "content": prompt}]
+        #    Include system prompt if provided in kwargs.
+        messages = []
+        system_prompt = kwargs.pop("system_prompt", None) # Extract system_prompt from kwargs
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
 
         # 2. Prepare API params (same as OpenAiClient)
         api_params = {
