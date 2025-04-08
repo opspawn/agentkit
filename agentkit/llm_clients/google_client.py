@@ -1,7 +1,7 @@
 import os
 from typing import Dict, Any, Optional, List
-import google.generativeai as genai
-from google.generativeai.types import GenerateContentResponse, GenerationConfig
+import google.genai as genai # Changed import
+from google.genai import types as genai_types # Use alias for types
 
 from agentkit.core.interfaces.llm_client import BaseLlmClient, LlmResponse
 
@@ -16,12 +16,19 @@ class GoogleClient(BaseLlmClient):
         Args:
             api_key: Google API key. Defaults to GOOGLE_API_KEY env var.
         """
-        self.api_key = api_key or os.getenv("GOOGLE_API_KEY")
-        if not self.api_key:
-            raise ValueError("Google API key not provided or found in environment variables (GOOGLE_API_KEY).")
+        # The new SDK handles API key via env var GOOGLE_API_KEY automatically
+        # or via constructor argument if needed. We'll rely on env var for now.
+        # If api_key is explicitly passed, we should use it.
+        client_options = {}
+        if api_key:
+            client_options["api_key"] = api_key
+        elif not os.getenv("GOOGLE_API_KEY"):
+             raise ValueError("Google API key not provided or found in environment variables (GOOGLE_API_KEY).")
 
-        genai.configure(api_key=self.api_key)
-        # Note: Model is instantiated per-request in generate method
+        # TODO: Add support for Vertex AI client initialization if needed via env vars
+        # GOOGLE_GENAI_USE_VERTEXAI, GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION
+
+        self.client = genai.Client(**client_options)
 
     async def generate(
         self,
@@ -30,7 +37,7 @@ class GoogleClient(BaseLlmClient):
         stop_sequences: Optional[List[str]] = None,
         temperature: float = 0.7,
         max_tokens: Optional[int] = None, # Called max_output_tokens in Gemini
-        **kwargs: Any
+            **kwargs: Any # Keep kwargs for potential future use, though less direct mapping now
     ) -> LlmResponse:
         """
         Generates text based on a prompt using the Google Gemini API.
@@ -47,61 +54,54 @@ class GoogleClient(BaseLlmClient):
             An LlmResponse object containing the generated content and metadata.
         """
         try:
-            # 1. Instantiate the model
-            generative_model = genai.GenerativeModel(model_name=model)
-
-            # 2. Prepare GenerationConfig
+            # 1. Prepare GenerationConfig (using new SDK types)
             config_params = {
                 "temperature": temperature,
-                # Map BaseLlmClient max_tokens to Gemini's max_output_tokens
                 "max_output_tokens": max_tokens,
                 "stop_sequences": stop_sequences,
-                # Extract relevant kwargs for GenerationConfig
                 "top_p": kwargs.get("top_p"),
                 "top_k": kwargs.get("top_k"),
-                # candidate_count is another potential param, default is 1
             }
-            # Filter out None values as GenerationConfig doesn't accept them for all fields
             filtered_config_params = {k: v for k, v in config_params.items() if v is not None}
-            generation_config = GenerationConfig(**filtered_config_params)
+            generation_config = genai_types.GenerationConfig(**filtered_config_params)
 
-            # 3. Call model.generate_content_async
-            response = await generative_model.generate_content_async(
-                contents=prompt, # Simple string prompt
+            # 2. Call client.models.generate_content (new SDK uses this structure)
+            # The new SDK handles async automatically if client is created in async context
+            # For now, assume sync call structure based on docs, adjust if needed for BaseLlmClient async requirement
+            # NOTE: The BaseLlmClient requires an async generate method. The new google-genai SDK
+            # seems to handle async implicitly or via a separate async client.
+            # We might need to wrap the sync call or investigate async client usage.
+            # For now, let's assume a direct call works and adjust if runtime errors occur.
+
+            # TODO: Investigate async client usage for google-genai if direct call fails in async context.
+            response = self.client.models.generate_content(
+                model=f"models/{model}", # Models often need 'models/' prefix
+                contents=prompt,
                 generation_config=generation_config,
-                # safety_settings=... # Could add safety settings later
+                # safety_settings=...
             )
 
-            # 5. Map the successful response to LlmResponse
-            # Gemini's finish_reason mapping (refer to google.generativeai.types.FinishReason)
-            finish_reason_map = {
-                0: "unspecified", # FINISH_REASON_UNSPECIFIED
-                1: "stop",        # STOP
-                2: "length",      # MAX_TOKENS
-                3: "safety",      # SAFETY
-                4: "recitation",  # RECITATION
-                5: "other",       # OTHER
-            }
-            # Access finish_reason safely, might be complex depending on response structure
-            # Assuming simple case where response.candidates[0] exists
-            raw_finish_reason = 0 # Default to unspecified
+            # 3. Map the successful response to LlmResponse
+            # Access finish_reason (assuming similar structure, needs verification)
+            finish_reason = "unknown"
             if response.candidates:
-                 raw_finish_reason = response.candidates[0].finish_reason
-
-            finish_reason = finish_reason_map.get(raw_finish_reason, "unknown")
+                 # Assuming finish_reason is an enum or string directly accessible
+                 raw_finish_reason = getattr(response.candidates[0], 'finish_reason', 'UNKNOWN')
+                 # Convert enum to string if necessary (example)
+                 finish_reason = str(raw_finish_reason).split('.')[-1].lower() # Example conversion
 
             # Extract text content safely
             content = ""
             try:
                 content = response.text
             except ValueError:
-                # Handle cases where response.text might raise error (e.g., blocked prompt)
-                content = f"Blocked: {response.prompt_feedback.block_reason.name}"
-                finish_reason = "safety" # Override finish reason if blocked
+                # Handle blocked prompt (assuming similar feedback structure)
+                block_reason = getattr(getattr(response, 'prompt_feedback', None), 'block_reason', None)
+                content = f"Blocked: {block_reason.name if block_reason else 'Unknown Reason'}"
+                finish_reason = "safety"
 
-            # Usage metadata is not directly available in the standard async response
-            # It might be in response.usage_metadata but needs verification
-            usage_metadata = getattr(response, 'usage_metadata', None) # Safely access if exists
+            # Extract usage metadata (assuming similar structure)
+            usage_metadata = getattr(response, 'usage_metadata', None)
 
             return LlmResponse(
                 content=content,

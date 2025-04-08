@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import multiprocessing
+from multiprocessing.connection import Connection # Added import
 import time
 import traceback
 from typing import Any, Dict, Optional
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 TIMEOUT_SENTINEL = object()
 
 def _execute_tool_target(
-    tool: Tool, tool_input: Dict[str, Any], connection: multiprocessing.connection.Connection
+    tool: Tool, tool_input: Dict[str, Any], connection: Connection # Changed type hint
 ) -> None:
     """
     Target function to be run in a separate process.
