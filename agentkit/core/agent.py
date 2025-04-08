@@ -4,19 +4,19 @@
 import asyncio
 from typing import Any, Dict, List, Optional
 
-# Interface Imports
-from agentkit.core.interfaces import (
+# Interface Imports (Relative)
+from .interfaces import (
     BaseMemory,
     BasePlanner,
     BaseSecurityManager,
     BaseToolManager,
 )
 
-# Concrete Implementation Imports (for defaults)
-from agentkit.memory.short_term import ShortTermMemory
-from agentkit.planning.simple_planner import SimplePlanner
-from agentkit.tools.registry import ToolRegistry, ToolNotFoundError
-from agentkit.tools.schemas import ToolResult
+# Concrete Implementation Imports (Relative)
+from ..memory.short_term import ShortTermMemory
+from ..planning.simple_planner import SimplePlanner
+from ..tools.registry import ToolRegistry, ToolNotFoundError
+from ..tools.schemas import ToolResult
 
 # Placeholder Security Manager (if needed for default)
 # from .interfaces.security import BaseSecurityManager # Already imported above

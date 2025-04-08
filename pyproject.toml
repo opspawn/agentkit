@@ -10,6 +10,9 @@ description = "Toolkit for building LLM-powered agents."
 requires-python = ">=3.8"
 dependencies = [
     "pydantic",
+    "openai>=1.0.0,<2.0.0", # Added for OpenAI LLM Client
+    "anthropic>=0.20.0,<1.0.0", # Added for Anthropic LLM Client
+    "google-generativeai>=0.4.0,<1.0.0", # Added for Google Gemini Client
 ]
 
 [project.optional-dependencies]

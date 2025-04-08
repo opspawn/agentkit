@@ -5,7 +5,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import ValidationError
 
-from agentkit.core.interfaces.tool_manager import BaseToolManager
+# Use relative import for interfaces
+from ..core.interfaces.tool_manager import BaseToolManager
 from .execution import execute_tool_safely
 from .schemas import DEFAULT_SCHEMA, Tool, ToolError, ToolResult, ToolSpec
 
@@ -13,6 +14,11 @@ from .schemas import DEFAULT_SCHEMA, Tool, ToolError, ToolResult, ToolSpec
 class ToolExecutionError(ToolError):
     """Custom exception for errors during tool execution."""
 
+    pass
+
+
+class ToolRegistrationError(ToolError):
+    """Custom exception for errors during tool registration."""
     pass
 
 
@@ -41,13 +47,13 @@ class ToolRegistry(BaseToolManager):
             tool: The Tool instance to register.
 
         Raises:
-            ValueError: If a tool with the same name already exists or if the provided object is not a Tool instance.
+            ToolRegistrationError: If a tool with the same name already exists or if the provided object is not a Tool instance.
         """
         if not isinstance(tool, Tool):
              # Reason: Ensure only valid Tool instances are added.
-             raise ValueError("Item to be added must be an instance of the Tool class.")
+             raise ToolRegistrationError("Item to be added must be an instance of the Tool class.")
         if tool.spec.name in self._tools:
-            raise ValueError(f"Tool with name '{tool.spec.name}' already registered.")
+            raise ToolRegistrationError(f"Tool with name '{tool.spec.name}' already registered.")
         self._tools[tool.spec.name] = tool
 
     def get_tool(self, name: str) -> Tool: # Type hint uses imported Tool

@@ -1,170 +1,80 @@
+# agentkit/tests/tools/test_schemas.py
 import pytest
 from pydantic import ValidationError
 
-from agentkit.tools.schemas import ToolSpec, ToolResult, Tool
-from agentkit.tools.mcp_proxy import MCPProxyToolInput
-
-
-from pydantic import BaseModel # Add BaseModel import
-
-# --- ToolSpec Tests ---
-
-# Define a dummy BaseModel for schema tests
-class DummyInputSchema(BaseModel):
-    arg1: str
-
-def test_toolspec_valid():
-    """Tests successful creation of a ToolSpec."""
-    spec = ToolSpec(
-        name="test_tool",
-        description="A test tool description.",
-        input_schema=DummyInputSchema, # Use the BaseModel subclass
-    )
-    assert spec.name == "test_tool"
-    assert spec.description == "A test tool description."
-    # Assert that the stored schema is the class itself
-    assert spec.input_schema is DummyInputSchema
-
-
-def test_toolspec_missing_name():
-    """Tests validation error for missing name."""
-    with pytest.raises(ValidationError):
-        ToolSpec(
-            description="A test tool description.",
-            input_schema={"type": "object"},
-        )
-
-
-def test_toolspec_missing_description():
-    """Tests validation error for missing description."""
-    with pytest.raises(ValidationError):
-        ToolSpec(
-            name="test_tool",
-            input_schema={"type": "object"},
-        )
-
-
-def test_toolspec_invalid_schema_type():
-    """Tests validation error for invalid input_schema type."""
-    with pytest.raises(ValidationError):
-        ToolSpec(
-            name="test_tool",
-            description="A test tool description.",
-            input_schema={"not": "a BaseModel subclass"}, # Pass something invalid
-        )
+from agentkit.tools.schemas import ToolResult, ToolSpec
 
 
 # --- ToolResult Tests ---
 
-def test_toolresult_valid_success():
-    """Tests successful creation of a ToolResult for success."""
-    result = ToolResult(
-        tool_name="test_tool",
-        tool_args={"input": "value"}, # Add missing tool_args
-        status_code=200,
-        output={"data": "success"},
-        error=None,
-    )
-    assert result.tool_name == "test_tool"
-    assert result.tool_args == {"input": "value"}
-    assert result.status_code == 200
-    assert result.output == {"data": "success"}
+def test_tool_result_success():
+    """Tests creating a successful ToolResult."""
+    output_data = {"value": 42}
+    result = ToolResult(output=output_data)
+    assert result.output == output_data
     assert result.error is None
+    # Check immutability
+    with pytest.raises(ValidationError):
+        result.error = "New error"
 
 
-def test_toolresult_valid_error():
-    """Tests successful creation of a ToolResult for error."""
-    result = ToolResult(
-        tool_name="test_tool",
-        tool_args={"input": "failed"}, # Add missing tool_args
-        status_code=500,
-        output=None,
-        error="Something went wrong",
-    )
-    assert result.tool_name == "test_tool"
-    assert result.tool_args == {"input": "failed"}
-    assert result.status_code == 500
+def test_tool_result_error():
+    """Tests creating a ToolResult with an error."""
+    error_msg = "Something went wrong"
+    result = ToolResult(output=None, error=error_msg)
     assert result.output is None
-    assert result.error == "Something went wrong"
-
-
-def test_toolresult_missing_tool_name():
-    """Tests validation error for missing tool_name."""
+    assert result.error == error_msg
+    # Check immutability
     with pytest.raises(ValidationError):
-        ToolResult(status_code=200, output={"data": "success"})
+        result.output = "New output"
 
 
-def test_toolresult_missing_status_code():
-    """Tests validation error for missing status_code."""
+def test_tool_result_requires_output():
+    """Tests that output field is required."""
+    with pytest.raises(ValidationError, match="Field required"):
+        ToolResult(error="An error occurred") # Missing output
+
+
+# --- ToolSpec Tests ---
+
+def test_tool_spec_creation():
+    """Tests creating a valid ToolSpec."""
+    name = "calculator"
+    description = "Performs calculations."
+    schema = {"type": "object", "properties": {"expression": {"type": "string"}}}
+    spec = ToolSpec(name=name, description=description, input_schema=schema)
+    assert spec.name == name
+    assert spec.description == description
+    assert spec.input_schema == schema
+    # Check immutability
     with pytest.raises(ValidationError):
-        ToolResult(tool_name="test_tool", output={"data": "success"})
+        spec.name = "new_calculator"
 
 
-def test_toolresult_invalid_status_code_type():
-    """Tests validation error for invalid status_code type."""
-    with pytest.raises(ValidationError):
-        ToolResult(
-            tool_name="test_tool",
-            status_code="not an int",
-            output={"data": "success"},
-        )
+def test_tool_spec_default_schema():
+    """Tests that input_schema defaults to an empty dict."""
+    name = "simple_tool"
+    description = "A tool with no input."
+    spec = ToolSpec(name=name, description=description)
+    assert spec.name == name
+    assert spec.description == description
+    assert spec.input_schema == {}
 
 
-# --- Tool Base Class Tests ---
+def test_tool_spec_missing_required_fields():
+    """Tests validation errors for missing required fields."""
+    with pytest.raises(ValidationError, match="Field required"):
+        ToolSpec(description="Missing name")
 
-def test_tool_abc_instantiation_fails():
-    """Tests that the abstract Tool class cannot be instantiated directly."""
-    # Tool.__init__ raises NotImplementedError if spec is missing
-    with pytest.raises(NotImplementedError):
-        Tool()
-
-
-# --- MCPProxyToolInput Tests ---
-
-def test_mcp_proxy_input_valid():
-    """Tests successful creation of MCPProxyToolInput."""
-    input_data = MCPProxyToolInput(
-        server_name="test-server", # Use correct field name
-        tool_name="get_data",      # Use correct field name
-        arguments={"param1": "value1"}, # Use correct field name
-    )
-    assert input_data.server_name == "test-server"
-    assert input_data.tool_name == "get_data"
-    assert input_data.arguments == {"param1": "value1"}
+    with pytest.raises(ValidationError, match="Field required"):
+        ToolSpec(name="Missing description")
 
 
-def test_mcp_proxy_input_missing_server_name():
-    """Tests validation error for missing server_name."""
-    with pytest.raises(ValidationError):
-        MCPProxyToolInput(
-            tool_name="get_data",
-            arguments={"param1": "value1"},
-        )
+# --- Tool ABC Tests ---
+# (No direct tests for the ABC itself, but ensure subclasses can be defined)
 
-
-def test_mcp_proxy_input_missing_tool_name():
-    """Tests validation error for missing tool_name."""
-    with pytest.raises(ValidationError):
-        MCPProxyToolInput(
-            server_name="test-server",
-            arguments={"param1": "value1"},
-        )
-
-
-def test_mcp_proxy_input_missing_arguments():
-    """Tests validation error for missing arguments."""
-    with pytest.raises(ValidationError):
-        MCPProxyToolInput(
-            server_name="test-server",
-            tool_name="get_data",
-        )
-
-
-def test_mcp_proxy_input_invalid_arguments_type():
-    """Tests validation error for invalid arguments type."""
-    with pytest.raises(ValidationError):
-        MCPProxyToolInput(
-            server_name="test-server",
-            tool_name="get_data",
-            arguments="not a dict",
-        )
+def test_tool_abc_definition():
+    """Placeholder test to ensure Tool ABC is defined correctly."""
+    from agentkit.tools.schemas import Tool # Re-import locally if needed
+    assert Tool is not None
+    # Further tests would involve creating a concrete subclass

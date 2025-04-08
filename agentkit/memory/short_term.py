@@ -3,7 +3,8 @@
 
 from typing import Any, Dict, List, Optional
 
-from agentkit.core.interfaces.memory import BaseMemory
+# Use relative import for interfaces within the same package level
+from ..core.interfaces.memory import BaseMemory
 
 
 class ShortTermMemory(BaseMemory):

@@ -2,16 +2,18 @@
 """Abstract Base Class for agent tool managers."""
 
 import abc
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from agentkit.tools.schemas import Tool, ToolResult
+# Use relative import and TYPE_CHECKING to avoid circular dependency issues
+if TYPE_CHECKING:
+    from ...tools.schemas import Tool, ToolResult
 
 
 class BaseToolManager(abc.ABC):
     """Abstract base class for managing and executing agent tools."""
 
     @abc.abstractmethod
-    def lookup_tool(self, tool_name: str) -> Optional[Tool]:
+    def lookup_tool(self, tool_name: str) -> Optional["Tool"]:
         """
         Find a tool by its name.
 
@@ -24,7 +26,7 @@ class BaseToolManager(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    async def execute_tool(self, tool_name: str, args: Dict[str, Any]) -> ToolResult:
+    async def execute_tool(self, tool_name: str, args: Dict[str, Any]) -> "ToolResult":
         """
         Execute a registered tool with the given arguments.
 
