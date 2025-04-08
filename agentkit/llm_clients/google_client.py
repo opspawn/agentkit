@@ -95,9 +95,9 @@ class GoogleClient(BaseLlmClient):
             finish_reason = "unknown"
             if response.candidates:
                  # Assuming finish_reason is an enum or string directly accessible
-                 raw_finish_reason = getattr(response.candidates[0], 'finish_reason', 'UNKNOWN')
-                 # Convert enum to string if necessary (example)
-                 finish_reason = str(raw_finish_reason).split('.')[-1].lower() # Example conversion
+                 raw_finish_reason = getattr(response.candidates[0], 'finish_reason', 'unknown')
+                 # Simplify conversion: just lowercase the string representation
+                 finish_reason = str(raw_finish_reason).lower()
 
             # 3. Map the successful response to LlmResponse, handling potential ValueError for blocked content
             try:

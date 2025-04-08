@@ -31,7 +31,10 @@ def mock_genai_and_types():
         mock_genai_module.Client.return_value = mock_client_instance
 
         # Configure the GenerationConfig mock on the *patched types module*
-        mock_genai_types_module.GenerationConfig = MagicMock()
+        # Add the __annotations__ attribute that the client code expects
+        mock_config_constructor = MagicMock()
+        mock_config_constructor.__annotations__ = {} # Add expected attribute
+        mock_genai_types_module.GenerationConfig = mock_config_constructor
         # Mock Content and Part types used for constructing the 'contents' argument
         mock_genai_types_module.Content = MagicMock()
         mock_genai_types_module.Part = MagicMock()
@@ -56,7 +59,7 @@ def google_client(mock_genai_and_types): # Depends on the mocked modules
 
 # --- Test Cases ---
 
-@pytest.mark.xfail(reason="Persistent issue mocking response.text attribute access.")
+# Removed xfail marker again to capture debug output
 @pytest.mark.asyncio
 async def test_google_client_generate_success(google_client, mock_genai_and_types):
     """Tests successful generation using the Google client."""
@@ -75,13 +78,27 @@ async def test_google_client_generate_success(google_client, mock_genai_and_type
     # Mock the SDK's generate_content method to return an object that, when processed by the client,
     # results in the expected_llm_response. We need a mock SDK response that has the necessary attributes
     # for the client code to extract the data.
-    mock_sdk_response = MagicMock()
-    # Mock the new get_text() method instead of the .text attribute
-    mock_sdk_response.get_text = MagicMock(return_value="Generated Google text.")
+
+    # Mock the nested structure that response.text likely relies on
+    mock_part = MagicMock()
+    mock_part.text = "Generated Google text." # Set the text on the part
+
+    mock_content = MagicMock()
+    mock_content.parts = [mock_part]
+
     mock_candidate = MagicMock()
+    mock_candidate.content = mock_content
+    # Revert to PropertyMock for finish_reason as direct assignment didn't help
     type(mock_candidate).finish_reason = PropertyMock(return_value="STOP")
+
+    mock_sdk_response = MagicMock()
+    # Mock the underlying structure
     mock_sdk_response.candidates = [mock_candidate]
     mock_sdk_response.usage_metadata = {"prompt_token_count": 10, "candidates_token_count": 20, "total_token_count": 30}
+
+    # Revert to PropertyMock for .text, aligning with documentation/intent
+    type(mock_sdk_response).text = PropertyMock(return_value="Generated Google text.")
+
     # Configure the mock aio.models.generate_content method to return this mock SDK response
     mock_genai.Client.return_value.aio.models.generate_content.return_value = mock_sdk_response
 
