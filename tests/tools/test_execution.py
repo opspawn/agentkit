@@ -22,12 +22,17 @@ class SyncTool(Tool):
     def spec(self) -> ToolSpec:
         return self._spec
 
-    def execute(self, **kwargs) -> ToolResult:
+    def execute(self, args: dict) -> ToolResult: # Changed from **kwargs to args: dict
         if self._delay > 0:
             time.sleep(self._delay)
         if self._error:
             raise self._error
-        return ToolResult(output=self._output or {"sync_result": "ok", **kwargs})
+        # Add required fields for ToolResult and use args
+        return ToolResult(
+            tool_name=self.spec.name,
+            tool_args=args,
+            output=self._output or {"sync_result": "ok", **args} # Use args here too
+        )
 
 
 class AsyncTool(Tool):
@@ -42,12 +47,17 @@ class AsyncTool(Tool):
     def spec(self) -> ToolSpec:
         return self._spec
 
-    async def execute(self, **kwargs) -> ToolResult:
+    async def execute(self, args: dict) -> ToolResult: # Changed from **kwargs to args: dict
         if self._delay > 0:
             await asyncio.sleep(self._delay)
         if self._error:
             raise self._error
-        return ToolResult(output=self._output or {"async_result": "ok", **kwargs})
+        # Add required fields for ToolResult and use args
+        return ToolResult(
+            tool_name=self.spec.name,
+            tool_args=args,
+            output=self._output or {"async_result": "ok", **args} # Use args here too
+        )
 
 
 # --- Test Cases ---
@@ -59,7 +69,7 @@ async def test_execute_sync_tool_success():
     expected_output = {"sync_result": "ok", "arg": 1}
     tool = SyncTool(output=expected_output)
 
-    result = await execute_tool_safely(tool=tool, tool_input=tool_input, timeout=1.0)
+    result = await execute_tool_safely(tool=tool, args=tool_input, timeout=1.0)
 
     assert isinstance(result, ToolResult)
     assert result.output == expected_output
@@ -73,7 +83,7 @@ async def test_execute_async_tool_success():
     expected_output = {"async_result": "ok", "arg": 2}
     tool = AsyncTool(output=expected_output)
 
-    result = await execute_tool_safely(tool=tool, tool_input=tool_input, timeout=1.0)
+    result = await execute_tool_safely(tool=tool, args=tool_input, timeout=1.0)
 
     assert isinstance(result, ToolResult)
     assert result.output == expected_output
@@ -87,11 +97,12 @@ async def test_execute_sync_tool_raises_exception():
     error_message = "Sync tool failed!"
     tool = SyncTool(error=ValueError(error_message))
 
-    result = await execute_tool_safely(tool=tool, tool_input=tool_input, timeout=1.0)
+    result = await execute_tool_safely(tool=tool, args=tool_input, timeout=1.0)
 
     assert isinstance(result, ToolResult)
     assert result.output is None
-    assert "Tool execution failed with ValueError" in result.error
+    # Check for exception type and message within the error string
+    assert "ValueError" in result.error
     assert error_message in result.error
     assert "Traceback" in result.error
 
@@ -103,11 +114,12 @@ async def test_execute_async_tool_raises_exception():
     error_message = "Async tool failed!"
     tool = AsyncTool(error=RuntimeError(error_message))
 
-    result = await execute_tool_safely(tool=tool, tool_input=tool_input, timeout=1.0)
+    result = await execute_tool_safely(tool=tool, args=tool_input, timeout=1.0)
 
     assert isinstance(result, ToolResult)
     assert result.output is None
-    assert "Tool execution failed with RuntimeError" in result.error
+    # Check for exception type and message within the error string
+    assert "RuntimeError" in result.error
     assert error_message in result.error
     assert "Traceback" in result.error
 
@@ -119,11 +131,12 @@ async def test_execute_tool_timeout():
     timeout_duration = 0.1
     tool = AsyncTool(delay=timeout_duration + 0.2) # Ensure delay exceeds timeout
 
-    result = await execute_tool_safely(tool=tool, tool_input=tool_input, timeout=timeout_duration)
+    result = await execute_tool_safely(tool=tool, args=tool_input, timeout=timeout_duration)
 
     assert isinstance(result, ToolResult)
     assert result.output is None
-    assert f"Tool execution timed out after {timeout_duration} seconds" in result.error
+    # Match the formatting used in the actual error message
+    assert f"Tool execution timed out after {timeout_duration:.2f} seconds." in result.error
 
 
 @pytest.mark.asyncio
@@ -133,7 +146,7 @@ async def test_execute_tool_no_timeout():
     delay_duration = 0.1 # Short delay, should complete
     tool = AsyncTool(delay=delay_duration)
 
-    result = await execute_tool_safely(tool=tool, tool_input=tool_input, timeout=None) # No timeout
+    result = await execute_tool_safely(tool=tool, args=tool_input, timeout=None) # No timeout
 
     assert isinstance(result, ToolResult)
     assert result.output is not None

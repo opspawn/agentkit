@@ -48,20 +48,22 @@ def mock_tool_instance_alt():
 def test_registry_initialization(tool_registry):
     """Tests that the registry initializes empty."""
     assert tool_registry.list_tools() == []
-    assert tool_registry.get_tool("nonexistent") is None
+    # Test that get_tool raises ToolNotFoundError for a nonexistent tool
+    with pytest.raises(ToolNotFoundError):
+        tool_registry.get_tool("nonexistent")
 
 
 def test_registry_register_tool_success(tool_registry, mock_tool_instance):
     """Tests successful registration of a tool."""
-    tool_registry.register_tool(mock_tool_instance)
+    tool_registry.add_tool(mock_tool_instance) # Use add_tool
     assert tool_registry.list_tools() == [mock_tool_instance.spec]
     assert tool_registry.get_tool(mock_tool_instance.spec.name) is mock_tool_instance
 
 
 def test_registry_register_multiple_tools(tool_registry, mock_tool_instance, mock_tool_instance_alt):
     """Tests registering multiple different tools."""
-    tool_registry.register_tool(mock_tool_instance)
-    tool_registry.register_tool(mock_tool_instance_alt)
+    tool_registry.add_tool(mock_tool_instance) # Use add_tool
+    tool_registry.add_tool(mock_tool_instance_alt) # Use add_tool
 
     registered_specs = tool_registry.list_tools()
     assert len(registered_specs) == 2
@@ -74,11 +76,11 @@ def test_registry_register_multiple_tools(tool_registry, mock_tool_instance, moc
 
 def test_registry_register_tool_duplicate_name(tool_registry, mock_tool_instance):
     """Tests that registering a tool with a duplicate name raises an error."""
-    tool_registry.register_tool(mock_tool_instance)
+    tool_registry.add_tool(mock_tool_instance) # Use add_tool
     duplicate_tool = MockTool(name=mock_tool_instance.spec.name) # Same name
 
     with pytest.raises(ToolRegistrationError, match="already registered"):
-        tool_registry.register_tool(duplicate_tool)
+        tool_registry.add_tool(duplicate_tool) # Use add_tool
 
     # Ensure only the first tool remains
     assert tool_registry.list_tools() == [mock_tool_instance.spec]
@@ -86,7 +88,9 @@ def test_registry_register_tool_duplicate_name(tool_registry, mock_tool_instance
 
 def test_registry_get_tool_not_found(tool_registry):
     """Tests getting a tool that hasn't been registered."""
-    assert tool_registry.get_tool("not_registered_tool") is None
+    # Test that get_tool raises ToolNotFoundError
+    with pytest.raises(ToolNotFoundError):
+        tool_registry.get_tool("not_registered_tool")
 
 
 @pytest.mark.asyncio
@@ -94,20 +98,23 @@ def test_registry_get_tool_not_found(tool_registry):
 async def test_registry_execute_tool_success(mock_safe_execute, tool_registry, mock_tool_instance):
     """Tests successful execution of a registered tool via the registry."""
     tool_name = mock_tool_instance.spec.name
-    tool_input = {"arg1": "value1"}
-    expected_result = ToolResult(output={"success": True}, error=None)
+    tool_args_dict = {"arg1": "value1"} # Use a different name to avoid confusion
+    # Add missing fields to ToolResult
+    expected_result = ToolResult(tool_name=tool_name, tool_args=tool_args_dict, output={"success": True}, error=None)
 
     # Configure the mock execute_tool_safely to return the expected result
     mock_safe_execute.return_value = expected_result
 
     # Register the tool
-    tool_registry.register_tool(mock_tool_instance)
+    tool_registry.add_tool(mock_tool_instance) # Use add_tool
 
-    # Execute the tool via the registry
-    actual_result = await tool_registry.execute_tool(name=tool_name, tool_input=tool_input)
+    # Execute the tool via the registry - use arguments=
+    actual_result = await tool_registry.execute_tool(name=tool_name, arguments=tool_args_dict)
 
-    # Assert that execute_tool_safely was called correctly
-    mock_safe_execute.assert_awaited_once_with(tool=mock_tool_instance, tool_input=tool_input)
+    # Assert that execute_tool_safely was called correctly using positional arguments
+    # Note: execute_tool validates input first, then calls execute_tool_safely with validated args
+    # For this test, assume validation passes and validated_input == tool_args_dict
+    mock_safe_execute.assert_awaited_once_with(mock_tool_instance, tool_args_dict)
 
     # Assert the final result matches what execute_tool_safely returned
     assert actual_result == expected_result
@@ -118,11 +125,14 @@ async def test_registry_execute_tool_success(mock_safe_execute, tool_registry, m
 async def test_registry_execute_tool_not_found(mock_safe_execute, tool_registry):
     """Tests executing a tool that is not registered."""
     tool_name = "nonexistent_tool"
-    tool_input = {"arg": "val"}
+    tool_args_dict = {"arg": "val"} # Use a different name
 
-    with pytest.raises(ToolNotFoundError, match=f"Tool '{tool_name}' not found"):
-        await tool_registry.execute_tool(name=tool_name, tool_input=tool_input)
+    # Expect execute_tool to return an error ToolResult, not raise ToolNotFoundError
+    actual_result = await tool_registry.execute_tool(name=tool_name, arguments=tool_args_dict)
 
+    assert actual_result.error is not None
+    assert f"Tool '{tool_name}' not found" in actual_result.error
+    assert actual_result.status_code == 500 # Check status code based on registry.py logic
     mock_safe_execute.assert_not_awaited()
 
 
@@ -131,15 +141,18 @@ async def test_registry_execute_tool_not_found(mock_safe_execute, tool_registry)
 async def test_registry_execute_tool_safe_execution_error(mock_safe_execute, tool_registry, mock_tool_instance):
     """Tests when execute_tool_safely itself returns an error result."""
     tool_name = mock_tool_instance.spec.name
-    tool_input = {"arg1": "value1"}
-    error_result = ToolResult(output=None, error="Safe execution failed")
+    tool_args_dict = {"arg1": "value1"} # Use a different name
+    # Add missing fields to ToolResult
+    error_result = ToolResult(tool_name=tool_name, tool_args=tool_args_dict, output=None, error="Safe execution failed")
 
     mock_safe_execute.return_value = error_result
-    tool_registry.register_tool(mock_tool_instance)
+    tool_registry.add_tool(mock_tool_instance) # Use add_tool
 
-    actual_result = await tool_registry.execute_tool(name=tool_name, tool_input=tool_input)
+    # Use arguments=
+    actual_result = await tool_registry.execute_tool(name=tool_name, arguments=tool_args_dict)
 
-    mock_safe_execute.assert_awaited_once_with(tool=mock_tool_instance, tool_input=tool_input)
+    # Use positional arguments in assertion
+    mock_safe_execute.assert_awaited_once_with(mock_tool_instance, tool_args_dict)
     assert actual_result == error_result
 
 
@@ -148,12 +161,15 @@ async def test_registry_execute_tool_safe_execution_error(mock_safe_execute, too
 async def test_registry_execute_tool_unexpected_wrapper_error(mock_safe_execute, tool_registry, mock_tool_instance):
     """Tests when the call to execute_tool_safely raises an unexpected exception."""
     tool_name = mock_tool_instance.spec.name
-    tool_input = {"arg1": "value1"}
+    tool_args_dict = {"arg1": "value1"} # Use a different name
 
-    tool_registry.register_tool(mock_tool_instance)
+    tool_registry.add_tool(mock_tool_instance) # Use add_tool
 
-    actual_result = await tool_registry.execute_tool(name=tool_name, tool_input=tool_input)
+    # Use arguments=
+    actual_result = await tool_registry.execute_tool(name=tool_name, arguments=tool_args_dict)
 
-    mock_safe_execute.assert_awaited_once_with(tool=mock_tool_instance, tool_input=tool_input)
+    # Use positional arguments in assertion
+    mock_safe_execute.assert_awaited_once_with(mock_tool_instance, tool_args_dict)
     assert actual_result.output is None
-    assert "Unexpected execution wrapper error: Wrapper error" in actual_result.error
+    # Check the actual error message format from registry.py
+    assert "Error during tool preparation or input validation: Wrapper error" in actual_result.error

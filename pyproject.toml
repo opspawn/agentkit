@@ -23,8 +23,8 @@ test = [
 ]
 
 [tool.setuptools.packages.find]
-# Look for packages inside the 'src' directory relative to the project root
-where = ["../src"]
+# Look for packages inside the 'src' directory relative to this project root
+where = ["src"]
 # Setuptools should find the 'agentkit' package within the 'src/' directory specified by 'where'
 
 [tool.pytest.ini_options]
