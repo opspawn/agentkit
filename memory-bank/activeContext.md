@@ -1,10 +1,9 @@
-# Active Context: AgentKit Python Module (Post-Task 4.3)
+# Active Context: AgentKit Python Module (Post-Task 4.2)
 
 ## 1. Current Work Focus
 
 -   **Phase 4: Testing & Validation:** Continuing work on ensuring quality and robustness.
--   **Task 4.3 Complete:** Refined the GitHub Actions workflow.
--   **Task 4.4: Basic Load Testing:** The immediate focus is now on performing basic load testing on key API endpoints.
+-   **Task 4.3: Refine CI/CD:** The immediate focus is now on refining the GitHub Actions workflow to include comprehensive testing (unit and integration), coverage reporting, linting, and formatting checks.
 
 ## 2. Recent Changes
 
@@ -16,23 +15,21 @@
     -   Registered mock tool in `main.py`.
 -   **Tracking Update:** Updated `TASK.md` to mark tasks 4.1 and 4.2 as complete.
 -   **Documentation:** Updated `TESTING_STRATEGY.md` with the integration test plan.
--   **Task 4.3 Complete:** Refined the GitHub Actions workflow (`.github/workflows/ci.yml`) to include:
-    -   Separate jobs for linting/formatting, unit tests (with coverage), and integration tests (with Docker Compose).
-    -   Coverage report (`coverage.xml`) generation and upload as a build artifact.
-    -   Integration tests now run reliably within the CI environment.
 
 ## 3. Next Steps (Immediate)
 
--   **Plan Load Testing:** Define key API endpoints (e.g., registration, messaging) and scenarios for load testing using a tool like `locust`.
--   **Implement Load Tests:** Write basic `locustfile.py`.
--   **Execute Load Tests:** Run `locust` locally against the service (potentially via Docker Compose).
--   **Analyze Results:** Document basic findings (requests/sec, failure rates).
--   **Update `progress.md`:** Reflect the completion of Task 4.3.
+-   **Analyze Existing CI:** Review the current GitHub Actions workflow file (likely in `.github/workflows/`).
+-   **Plan CI Enhancements:** Determine the necessary changes to:
+    -   Run both unit and integration tests (potentially requiring Docker setup within CI).
+    -   Generate and potentially upload/check coverage reports (`pytest-cov`).
+    -   Ensure linting (`flake8`) and formatting (`black --check`) steps are present and effective.
+-   **Implement CI Changes:** Modify the workflow YAML file.
+-   **Update `progress.md`:** Reflect the completion of Tasks 4.1 and 4.2.
 
 ## 4. Active Decisions & Considerations
 
--   **Load Testing Scope:** Determine the target load (users, requests/sec) and duration for initial tests.
--   **Load Testing Environment:** Confirm running load tests against the local Docker Compose setup is sufficient for this task.
+-   **CI Environment:** Decide how to handle the Docker dependency for integration tests within the GitHub Actions runner (e.g., using Docker-in-Docker, specific actions, or service containers).
+-   **Coverage Reporting:** Determine if coverage results should just be logged, uploaded as artifacts, or integrated with services like Codecov.
 
 ## 5. Important Patterns & Preferences
 
@@ -44,5 +41,4 @@
 
 -   Refactoring the tool registry to support external tools was necessary for realistic integration testing.
 -   Integration tests successfully validated the interaction between the API, SDK, and external (mock) services.
--   A robust CI pipeline (Task 4.3) is now in place, automating checks and improving confidence in code changes.
--   Handling Docker Compose within GitHub Actions required careful sequencing of build, up, test, and down steps.
+-   A robust CI pipeline is the next critical step to ensure ongoing quality.

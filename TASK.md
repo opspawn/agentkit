@@ -59,7 +59,7 @@ This TASK.md document provides a detailed, step-by-step checklist for developing
     - Test messaging endpoint parsing and response formats.
     - Test the tool integration interface.
 - [x] **Task 4.2:** Develop integration tests that simulate full workflows (registration → messaging → tool invocation).
-- [x] **Task 4.3:** Set up GitHub Actions to run tests, enforce linting, and ensure code style standards.
+- [ ] **Task 4.3:** Set up GitHub Actions to run tests, enforce linting, and ensure code style standards.
 - [ ] **Task 4.4:** Perform basic load and performance testing on the API endpoints.
 - [ ] **Task 4.5:** Conduct User Acceptance Testing (UAT) with sample use cases from the internal team.
 
