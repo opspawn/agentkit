@@ -1,7 +1,8 @@
+import requests # Import requests for HTTP calls
 from fastapi import APIRouter, HTTPException, status, Body, Path
 from agentkit.core.models import MessagePayload, ApiResponse
 from agentkit.registration.storage import agent_storage # To check if agent exists
-from agentkit.tools.registry import tool_registry # Import tool registry
+from agentkit.tools.registry import tool_registry # Import updated tool registry
 from agentkit.tools.interface import ToolInterface # Import base interface
 
 # Placeholder for more sophisticated dispatch logic later
@@ -39,7 +40,7 @@ async def run_agent(
     # 2. Check message type and handle tool invocation
     if payload.messageType == "tool_invocation":
         tool_name = payload.payload.get("tool_name")
-        parameters = payload.payload.get("parameters", {})
+        arguments = payload.payload.get("arguments", {}) # Match test payload key
 
         if not tool_name:
             raise HTTPException(
@@ -47,46 +48,89 @@ async def run_agent(
                 detail="Missing 'tool_name' in payload for tool_invocation message type."
             )
 
-        tool_class = tool_registry.get_tool_class(tool_name)
-        if not tool_class:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Tool '{tool_name}' not found in registry."
-            )
+        # Check if it's an external tool first
+        external_endpoint = tool_registry.get_tool_endpoint(tool_name)
+        if external_endpoint:
+            print(f"Attempting to invoke external tool '{tool_name}' at {external_endpoint}")
+            try:
+                # Make HTTP POST request to the external tool endpoint
+                # TODO: Add timeout, headers (e.g., Content-Type), error handling
+                response = requests.post(external_endpoint, json={"arguments": arguments}, timeout=10) # Send arguments
+                response.raise_for_status() # Raise HTTPError for bad responses
+                tool_result = response.json()
 
-        try:
-            # Instantiate the tool - assumes constructor doesn't need args for now
-            tool_instance: ToolInterface = tool_class()
-            # Pass session context if available
-            context = payload.sessionContext.model_dump(mode='json') if payload.sessionContext else None
-            # Execute the tool
-            tool_result = await tool_instance.execute(parameters=parameters, context=context)
+                # Format external tool response into ApiResponse
+                # Assuming external tool returns a similar structure as local ones
+                if isinstance(tool_result, dict) and tool_result.get("status") == "error":
+                     return ApiResponse(
+                         status="error",
+                         message=f"External tool '{tool_name}' execution failed: {tool_result.get('error_message', 'Unknown tool error')}",
+                         data=tool_result,
+                         error_code="EXTERNAL_TOOL_EXECUTION_FAILED"
+                     )
+                else:
+                     return ApiResponse(
+                         status="success",
+                         message=f"External tool '{tool_name}' executed successfully.",
+                         data=tool_result # Include the full tool result
+                     )
 
-            # Return the tool's result wrapped in ApiResponse
-            # We assume the tool returns a dict with at least a 'status' key
-            if tool_result.get("status") == "error":
-                 # If tool execution resulted in a handled error
-                 return ApiResponse(
-                     status="error",
-                     message=f"Tool '{tool_name}' execution failed: {tool_result.get('error_message', 'Unknown tool error')}",
-                     data=tool_result,
-                     error_code="TOOL_EXECUTION_FAILED"
-                 )
-            else:
-                 # Assume success if status is not 'error'
-                 return ApiResponse(
-                     status="success",
-                     message=f"Tool '{tool_name}' executed successfully.",
-                     data=tool_result # Include the full tool result
-                 )
+            except requests.exceptions.Timeout:
+                 raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=f"Request to external tool '{tool_name}' timed out.")
+            except requests.exceptions.ConnectionError:
+                 raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Could not connect to external tool '{tool_name}' at {external_endpoint}.")
+            except requests.exceptions.HTTPError as e:
+                 # Handle 4xx/5xx errors from the external tool itself
+                 error_detail = f"External tool '{tool_name}' returned error: {e}"
+                 try:
+                     error_data = e.response.json()
+                     error_detail += f" - Response: {error_data}"
+                 except requests.exceptions.JSONDecodeError:
+                     error_detail += f" - Response: {e.response.text}"
+                 raise HTTPException(status_code=e.response.status_code, detail=error_detail)
+            except Exception as e:
+                 # Catch other unexpected errors during external call
+                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred while calling external tool '{tool_name}': {e}")
 
-        except Exception as e:
-            # Catch unexpected errors during tool instantiation or execution
-            # Log the error: logger.error(f"Tool execution error for {tool_name}: {e}", exc_info=True)
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"An unexpected error occurred while executing tool '{tool_name}': {e}"
-            )
+        else:
+            # Fallback to local tool class execution
+            print(f"Attempting to invoke local tool class '{tool_name}'")
+            tool_class = tool_registry.get_tool_class(tool_name)
+            if not tool_class:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Tool '{tool_name}' not found in registry (local or external)." # Updated error message
+                )
+
+            try:
+                # Instantiate the tool
+                tool_instance: ToolInterface = tool_class()
+                # Pass session context if available
+                context = payload.sessionContext.model_dump(mode='json') if payload.sessionContext else None
+                # Execute the tool (using 'arguments' key now)
+                tool_result = await tool_instance.execute(parameters=arguments, context=context)
+
+                # Return the tool's result wrapped in ApiResponse
+                if isinstance(tool_result, dict) and tool_result.get("status") == "error":
+                     return ApiResponse(
+                         status="error",
+                         message=f"Local tool '{tool_name}' execution failed: {tool_result.get('error_message', 'Unknown tool error')}",
+                         data=tool_result,
+                         error_code="LOCAL_TOOL_EXECUTION_FAILED"
+                     )
+                else:
+                     return ApiResponse(
+                         status="success",
+                         message=f"Local tool '{tool_name}' executed successfully.",
+                         data=tool_result
+                     )
+
+            except Exception as e:
+                # Catch unexpected errors during local tool instantiation or execution
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"An unexpected error occurred while executing local tool '{tool_name}': {e}"
+                )
 
     else:
         # 3. Handle other message types (Placeholder)

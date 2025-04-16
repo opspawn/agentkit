@@ -1,40 +1,44 @@
-# Active Context: AgentKit Python Module (Initialization)
+# Active Context: AgentKit Python Module (Post-Task 4.2)
 
 ## 1. Current Work Focus
 
--   **Establishing Project Foundation:** The immediate focus is on setting up the core project structure, development environment, and essential documentation, including the Memory Bank itself.
--   **Memory Bank Creation:** Populating the initial Memory Bank files (`projectbrief.md`, `productContext.md`, `systemPatterns.md`, `techContext.md`, `activeContext.md`, `progress.md`) based on existing planning documents (`PLANNING.md`, `TASK.md`, `AgentkitDevelopmentDoc.md`).
--   **Phase 1 Tasks:** Preparing to begin the tasks outlined in Phase 1 of `TASK.md`, specifically:
-    -   Task 1.1: Git repository setup.
-    -   Task 1.2: Local development environment configuration (Python 3.9+, venv).
-    -   Task 1.3: Initial Dockerfile/Docker Compose setup.
-    -   Task 1.4: Formal audit of `AgentkitDevelopmentDoc.md` for Python requirements (partially covered by Memory Bank creation).
-    -   Task 1.5: Finalizing and documenting the tech stack choices (e.g., Flask vs. FastAPI).
+-   **Phase 4: Testing & Validation:** Continuing work on ensuring quality and robustness.
+-   **Task 4.3: Refine CI/CD:** The immediate focus is now on refining the GitHub Actions workflow to include comprehensive testing (unit and integration), coverage reporting, linting, and formatting checks.
 
 ## 2. Recent Changes
 
--   Initial creation of the Memory Bank directory and core files.
--   Synthesis of project information from `PLANNING.md`, `TASK.md`, and `AgentkitDevelopmentDoc.md` into the Memory Bank.
+-   **Task 4.1 Complete:** Enhanced unit test coverage using `pytest-cov`, achieving >90% overall coverage. Added tests for CLI module.
+-   **Task 4.2 Complete:** Developed integration tests (`tests/integration/test_workflows.py`) covering key workflows (registration, messaging, external tool invocation).
+    -   Created a mock external tool service (`tests/mock_services/mock_tool.py`).
+    -   Updated `docker-compose.yml` to include the mock service.
+    -   Refactored tool registry and messaging endpoint to support external HTTP tools.
+    -   Registered mock tool in `main.py`.
+-   **Tracking Update:** Updated `TASK.md` to mark tasks 4.1 and 4.2 as complete.
+-   **Documentation:** Updated `TESTING_STRATEGY.md` with the integration test plan.
 
 ## 3. Next Steps (Immediate)
 
--   Complete the creation of the initial Memory Bank (`progress.md`).
--   Proceed with Task 1.1 (Git setup) and Task 1.2 (Local environment setup) from `TASK.md`.
--   Make a definitive choice between Flask and FastAPI for the API framework.
+-   **Analyze Existing CI:** Review the current GitHub Actions workflow file (likely in `.github/workflows/`).
+-   **Plan CI Enhancements:** Determine the necessary changes to:
+    -   Run both unit and integration tests (potentially requiring Docker setup within CI).
+    -   Generate and potentially upload/check coverage reports (`pytest-cov`).
+    -   Ensure linting (`flake8`) and formatting (`black --check`) steps are present and effective.
+-   **Implement CI Changes:** Modify the workflow YAML file.
+-   **Update `progress.md`:** Reflect the completion of Tasks 4.1 and 4.2.
 
 ## 4. Active Decisions & Considerations
 
--   **Flask vs. FastAPI:** A decision needs to be made soon. FastAPI offers built-in data validation (Pydantic) and automatic API docs (Swagger), which aligns well with the project's emphasis on standardization and developer experience. Flask is simpler for basic cases but requires more manual setup for validation and docs. *Leaning towards FastAPI.*
--   **Storage:** Confirming the use of a simple in-memory Python dictionary for initial agent/tool storage before potentially introducing Redis.
+-   **CI Environment:** Decide how to handle the Docker dependency for integration tests within the GitHub Actions runner (e.g., using Docker-in-Docker, specific actions, or service containers).
+-   **Coverage Reporting:** Determine if coverage results should just be logged, uploaded as artifacts, or integrated with services like Codecov.
 
 ## 5. Important Patterns & Preferences
 
--   **Documentation First:** Establishing the Memory Bank before significant code implementation reinforces the importance of documentation.
--   **Modularity:** Adhering to the modular design outlined in `systemPatterns.md` from the start.
--   **Standardization:** Emphasizing the use of defined JSON schemas and REST principles for all API interactions.
--   **Testing:** Keeping in mind the requirement to add `pytest` tests for all new functionality (as per `project-guidelines.md` and `TASK.md`).
+-   **Automation:** Emphasize automating checks in CI to maintain code quality.
+-   **Testing:** Continue ensuring both unit and integration tests are run reliably.
+-   **Documentation:** Keep Memory Bank updated.
 
 ## 6. Learnings & Insights
 
--   The existing planning documents provide a solid foundation, but synthesizing them into the Memory Bank structure helps clarify relationships and priorities.
--   The need for a decision on Flask/FastAPI is an early critical path item for Phase 2 development.
+-   Refactoring the tool registry to support external tools was necessary for realistic integration testing.
+-   Integration tests successfully validated the interaction between the API, SDK, and external (mock) services.
+-   A robust CI pipeline is the next critical step to ensure ongoing quality.
