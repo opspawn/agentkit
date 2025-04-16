@@ -32,8 +32,8 @@ app.include_router(messaging.router, prefix="/v1", tags=["Messaging"])
 # In a real application, this might load from config or a database
 try:
     tool_registry.register_external_tool(
-        name="mock_tool_adder",
-        description="A mock tool that adds two numbers (simulated).",
+        name="mock_tool", # Corrected name to match example and mock service intent
+        description="A mock tool that simulates performing an action.", # Updated description
         parameters={
             "type": "object",
             "properties": {

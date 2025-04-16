@@ -60,14 +60,14 @@ This TASK.md document provides a detailed, step-by-step checklist for developing
     - Test the tool integration interface.
 - [x] **Task 4.2:** Develop integration tests that simulate full workflows (registration → messaging → tool invocation).
 - [x] **Task 4.4:** Perform basic load and performance testing on the API endpoints.
-- [ ] **Task 4.5:** Conduct User Acceptance Testing (UAT) with sample use cases from the internal team.
+- [x] **Task 4.5:** Conduct User Acceptance Testing (UAT) with sample use cases from the internal team.
 
 ---
 
 ### Phase 5: Documentation & Finalization
 
-- [ ] **Task 5.1:** Update the Developer README with installation, configuration, and usage instructions specific to the Python module.
-- [ ] **Task 5.2:** Generate API documentation using Swagger/OpenAPI.
+- [x] **Task 5.1:** Update the Developer README with installation, configuration, and usage instructions specific to the Python module.
+- [x] **Task 5.2:** Generate API documentation using Swagger/OpenAPI. (Reviewed auto-generated schema)
 - [ ] **Task 5.3:** Create sample projects and comprehensive tutorials showcasing the Python SDK and CLI usage.
 - [ ] **Task 5.4:** Document configuration details, environment variables, and any external dependencies.
 - [ ] **Task 5.5:** Final review and consolidation of all project documentation for final integration.

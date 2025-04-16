@@ -1,47 +1,41 @@
-# Active Context: AgentKit Python Module (Post-Task 4.4)
+# Active Context: AgentKit Python Module (Post-Task 5.2, Pre-Task 5.3 Impl)
 
 ## 1. Current Work Focus
 
--   **Phase 4: Testing & Validation:** Continuing work on ensuring quality and robustness.
--   **Task 4.4 Complete:** Performed basic load testing.
--   **Task 4.5: User Acceptance Testing (UAT):** The immediate focus is now on conducting UAT via example use cases.
+-   **Phase 5: Documentation & Finalization:** Preparing to implement Task 5.3.
 
 ## 2. Recent Changes
 
--   **Task 4.1 Complete:** Enhanced unit test coverage using `pytest-cov`, achieving >90% overall coverage. Added tests for CLI module.
--   **Task 4.2 Complete:** Developed integration tests (`tests/integration/test_workflows.py`) covering key workflows (registration, messaging, external tool invocation).
-    -   Created a mock external tool service (`tests/mock_services/mock_tool.py`).
-    -   Updated `docker-compose.yml` to include the mock service.
-    -   Refactored tool registry and messaging endpoint to support external HTTP tools.
-    -   Registered mock tool in `main.py`.
--   **Tracking Update:** Updated `TASK.md` to mark tasks 4.1 and 4.2 as complete.
--   **Documentation:** Updated `TESTING_STRATEGY.md` with the integration test plan.
--   **Task 4.3 Removed:** CI/CD refinement task (formerly 4.3) was removed from the plan.
--   **Task 4.4 Complete:** Added `locust` dependency, created `locustfile.py`, ran basic load test (10 users, 60s) against registration and messaging endpoints via Docker Compose. Identified and fixed payload issue (`name` vs `agentName`). Test showed good performance and expected `409 Conflict` errors for duplicate registrations.
+-   **Task 4.1 - 4.5 Complete:** All testing and validation tasks are complete.
+-   **Task 5.1 Complete:** Updated the main `README.md`.
+-   **Task 5.2 Complete:** Reviewed the auto-generated OpenAPI documentation.
+-   **Task 5.3 Planning Complete:** Researched options (`litellm`, `pydantic-ai`) for creating a generic LLM tool connector. Decided to use `litellm` due to its focus on unified API calling. Developed a detailed plan for Task 5.3 involving:
+    -   Adding `litellm` dependency.
+    -   Implementing `GenericLLMTool` using `litellm`.
+    -   Registering the tool.
+    -   Updating Docker Compose for `.env` access.
+    -   Creating a new `llm_agent_example.py`.
+    -   Updating `examples/README.md` and creating `TUTORIAL.md`.
+-   **Tracking Update:** Updated `TASK.md` to mark Tasks 5.1 and 5.2 complete.
 
 ## 3. Next Steps (Immediate)
 
--   **Plan UAT:** Define 1-2 simple example agent scenarios (e.g., echo agent, basic tool user agent) to be implemented in the `examples/` directory.
--   **Implement Examples:** Create the example agent scripts using the Python SDK.
--   **Test Examples:** Run the examples locally (potentially using Docker Compose) to verify core functionality from an end-user perspective.
--   **Document UAT:** Briefly document the scenarios tested and results.
--   **Update `progress.md`:** Reflect the completion of Task 4.4.
+-   **Begin Implementation of Task 5.3:** Start executing the plan for the generic LLM tool using `litellm`. First step is adding dependencies.
+-   **Update `progress.md`:** Reflect the completion of Tasks 5.1, 5.2 and the planning for 5.3.
 
 ## 4. Active Decisions & Considerations
 
--   **UAT Scope:** Define the complexity of the example agents needed for adequate UAT coverage for this phase.
--   **Example Structure:** Decide on a consistent structure for example agent scripts.
+-   **LLM Tool Implementation Details:** Specific arguments and return structure for `GenericLLMTool`.
+-   **Environment Setup:** User needs to provide `.env` file with API keys for the chosen LLM provider(s) to test the example.
 
 ## 5. Important Patterns & Preferences
 
--   **Automation:** Emphasize automating checks in CI to maintain code quality.
--   **Testing:** Continue ensuring both unit and integration tests are run reliably.
--   **Documentation:** Keep Memory Bank updated.
+-   **Model Agnosticism:** Aim for the `GenericLLMTool` to be as provider-neutral as possible, leveraging `litellm`.
+-   **Clear Documentation:** Ensure the setup (`.env`) and usage of the new LLM tool and example are clearly documented.
+-   **Maintainability:** Keep the tool implementation clean and testable (though adding specific tests for this tool might be a separate task).
 
 ## 6. Learnings & Insights
 
--   Refactoring the tool registry to support external tools was necessary for realistic integration testing.
--   Integration tests successfully validated the interaction between the API, SDK, and external (mock) services.
--   Basic load testing (Task 4.4) revealed a payload mismatch (`name` vs `agentName`) in the initial `locustfile.py`, highlighting the importance of aligning test scripts with API models.
--   The API handled duplicate registration attempts correctly with `409 Conflict` errors under light load.
--   Focus shifts to User Acceptance Testing (Task 4.5) using practical examples.
+-   `litellm` appears well-suited for creating a unified LLM calling interface within AgentKit tools.
+-   `pydantic-ai` is more of a full agent framework, less suitable for use *as a tool* within AgentKit.
+-   Integrating real LLMs requires careful handling of API keys and clear instructions for users.

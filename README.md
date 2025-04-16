@@ -12,24 +12,25 @@ AgentKit provides a foundational framework for developing AI agents in Python. I
 *   **Messaging:** Sending structured messages between agents or external systems via a central API.
 *   **Tool Integration:** Allowing agents to invoke registered tools (external APIs or internal functions).
 
-This module is designed with a local-first approach for ease of development and testing, using FastAPI for the core API and Pydantic for data validation.
+This module is designed with a local-first approach for ease of development and testing, using FastAPI for the core API and Pydantic for data validation. Core functionality has been validated through unit, integration, load, and user acceptance testing.
 
 ## Features
 
 *   RESTful API for agent management and interaction.
 *   Standardized JSON-based communication protocols.
-*   In-memory storage for agent and tool registration (initially).
-*   Basic Python SDK for client-side interaction.
+*   In-memory storage for agent and tool registration.
+*   Python SDK for client-side interaction.
 *   Command-line interface (CLI) for testing and basic operations.
-*   Extensible tool integration interface.
+*   Extensible tool integration interface (supports external HTTP tools).
 *   Containerized deployment using Docker.
+*   Example agents demonstrating core SDK usage.
 
 ## Getting Started
 
 ### Prerequisites
 
 *   Python 3.9+
-*   Docker & Docker Compose (optional, for running as a service)
+*   Docker & Docker Compose
 *   Git
 
 ### Installation
@@ -44,6 +45,7 @@ This module is designed with a local-first approach for ease of development and 
     ```bash
     python3 -m venv .venv
     source .venv/bin/activate
+    # On Windows use: .venv\Scripts\activate
     ```
 
 3.  **Install dependencies:**
@@ -53,63 +55,66 @@ This module is designed with a local-first approach for ease of development and 
 
 ### Running Locally (Development Server)
 
-You can run the AgentKit API server directly using Uvicorn:
+You can run the AgentKit API server directly using Uvicorn (useful for development):
 
 ```bash
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-The API will be available at `http://localhost:8000`. The interactive API documentation (Swagger UI) can be accessed at `http://localhost:8000/docs`.
+The API will be available at `http://localhost:8000`. The interactive API documentation (Swagger UI) can be accessed at `http://localhost:8000/docs`. Note that the mock tool service will not be available when running this way.
 
-### Running with Docker Compose
+### Running with Docker Compose (Recommended for Full Functionality)
 
-To run the service using Docker:
+This method runs the AgentKit API and the mock tool service, required for some examples.
 
-1.  **Build the image:**
+1.  **Build and start the services:**
     ```bash
-    docker-compose build
-    ```
-
-2.  **Start the service:**
-    ```bash
-    docker-compose up
+    docker-compose up -d --build
     ```
 
 The API will be available at `http://localhost:8000`.
+
+To stop the services:
+```bash
+docker-compose down
+```
 
 ## Usage
 
 ### Python SDK
 
-The SDK provides a convenient way to interact with the AgentKit API from Python scripts or other agents.
+The SDK provides a convenient way to interact with the AgentKit API from Python scripts.
 
 ```python
 from agentkit.sdk.client import AgentKitClient, AgentKitError
-from pydantic import HttpUrl
+# Note: HttpUrl validation is handled internally by the SDK now.
+# Pass endpoint as a string.
 
 # Initialize the client (adjust base_url if API runs elsewhere)
-client = AgentKitClient(base_url="http://localhost:8000")
+# Assumes API is running via Docker Compose at default port
+client = AgentKitClient(base_url="http://localhost:8000/v1") # Ensure /v1 prefix
 
 try:
     # Register an agent
     agent_id = client.register_agent(
-        agent_name="MyPythonAgent",
+        agent_name="MyPythonAgentSDK",
         capabilities=["process_data", "use_calculator"],
-        version="1.1",
-        contact_endpoint=HttpUrl("http://my-agent-service:9000/callback"),
+        version="1.2",
+        contact_endpoint="http://my-agent-service:9000/callback", # Placeholder
         metadata={"description": "Processes incoming data streams."}
     )
     print(f"Agent registered with ID: {agent_id}")
 
-    # Send a message (e.g., invoking a tool)
+    # Send a message (e.g., invoking the mock tool)
     response_data = client.send_message(
         target_agent_id=agent_id, # Can be self or another agent
-        sender_id="external_trigger_001",
+        sender_id="sdk_trigger_001",
         message_type="tool_invocation",
         payload={
-            "tool_name": "calculator", # Assuming a 'calculator' tool is registered
-            "parameters": {"operation": "add", "a": 5, "b": 7}
-        }
+            "tool_name": "mock_tool", # Use the registered mock tool
+            "arguments": {"query": "Test query from SDK"}
+        },
+        session_context={"example_session": "sdk_run_1"}
     )
     print(f"Message sent. Response data: {response_data}")
 
@@ -121,8 +126,6 @@ except Exception as e:
     print(f"An unexpected error occurred: {e}")
 
 ```
-
-*(More SDK examples to be added)*
 
 ### Command-Line Interface (CLI)
 
@@ -149,14 +152,35 @@ python -m agentkit.cli.main send <TARGET_AGENT_ID> \
     --type "intent_query" \
     '{"query": "What is the current status?"}'
 
-# Example: Invoking a tool
+# Example: Invoking the mock tool
 python -m agentkit.cli.main send <TARGET_AGENT_ID> \
     --sender "cli_tool_user_02" \
     --type "tool_invocation" \
-    '{"tool_name": "some_tool", "parameters": {"param1": "value1"}}'
+    '{"tool_name": "mock_tool", "arguments": {"query": "Test query from CLI"}}'
 ```
 
 *(Run `python -m agentkit.cli.main --help` for more details)*
+
+### Running Examples
+
+The `examples/` directory contains scripts demonstrating SDK usage.
+
+**Prerequisites:** Ensure the AgentKit services are running via Docker Compose:
+```bash
+docker-compose up -d --build
+```
+
+**Run the Ping Agent example:**
+```bash
+python examples/ping_agent.py
+```
+This script registers an agent and sends a message to itself.
+
+**Run the Tool User Agent example:**
+```bash
+python examples/tool_user_agent.py
+```
+This script registers an agent and sends a message to invoke the `mock_tool`.
 
 ## API Documentation
 
@@ -171,24 +195,38 @@ agentkit/          # Main package source code
 ├── api/           # FastAPI application, endpoints, middleware
 ├── cli/           # Command-line interface logic
 ├── core/          # Core models (Pydantic) and shared utilities
-├── messaging/     # Logic related to message handling (TBD)
+├── messaging/     # Logic related to message handling
 ├── registration/  # Agent registration logic and storage
 ├── sdk/           # Python SDK client
 └── tools/         # Tool interface and registry
 tests/             # Unit and integration tests (pytest)
+├── api/
+├── cli/
+├── integration/
+├── mock_services/ # Mock external services for testing
+├── registration/
+├── sdk/
+└── tools/
 docs/              # Project documentation (Markdown)
-examples/          # Example agent implementations (TBD)
+examples/          # Example agent implementations
+├── ping_agent.py
+└── tool_user_agent.py
 memory-bank/       # Roo's Memory Bank for project context
 .github/workflows/ # CI/CD workflows (GitHub Actions)
-Dockerfile         # Container definition
-docker-compose.yml # Docker Compose configuration
-main.py            # FastAPI application entry point
-requirements.txt   # Python dependencies
-README.md          # This file
+├── ci.yml
+.coverage          # Test coverage report data
+AgentkitDevelopmentDoc.md # Original development requirements doc
 DEVELOPMENT_PLAN.md # Detailed development plan
+Dockerfile         # Container definition for API service
+docker-compose.yml # Docker Compose configuration
+locustfile.py      # Locust load test definition
+main.py            # FastAPI application entry point
 PLANNING.md        # High-level project planning
+README.md          # This file
+requirements.txt   # Python dependencies
 TASK.md            # Task checklist
-...
+TESTING_STRATEGY.md # Detailed testing strategy
+UAT_PLAN_TASK_4_5.md # User Acceptance Test plan for Task 4.5
 ```
 
 ## Contributing
