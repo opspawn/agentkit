@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+pydantic
+pytest
+requests
+black
+flake8
+requests-mock # For mocking HTTP requests in SDK tests
+typer[all] # For building the CLI tool
+httpx # Required by FastAPI TestClient

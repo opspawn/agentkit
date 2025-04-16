@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./agentkit:/app/agentkit
+      - ./main.py:/app/main.py
+    environment:
+      # Add any necessary environment variables here
+      # EXAMPLE_VAR: example_value
+      PYTHONUNBUFFERED: 1 # Ensures logs are shown in real-time
