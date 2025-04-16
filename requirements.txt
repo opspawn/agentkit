@@ -10,3 +10,4 @@ requests-mock # For mocking HTTP requests in SDK tests
 typer[all] # For building the CLI tool
 httpx # Required by FastAPI TestClient
 flask # For mock tool service
+locust # For load testing
