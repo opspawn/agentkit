@@ -25,6 +25,7 @@ This module is designed with a local-first approach for ease of development and 
 *   Containerized deployment using Docker.
 *   Example agents demonstrating core SDK usage.
 *   Generic LLM tool integration using `litellm` (requires API key configuration).
+*   SDK support for reporting agent state to Ops-Core (requires Ops-Core configuration).
 
 ## Getting Started
 

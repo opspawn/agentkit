@@ -1,31 +1,46 @@
 import pytest
-import requests
-import requests_mock
+import httpx
+from pytest_httpx import HTTPXMock
+from unittest.mock import patch, MagicMock
+from datetime import datetime, timezone, timedelta
+
 from agentkit.sdk.client import AgentKitClient, AgentKitError
 from pydantic import HttpUrl
 
+# Use pytest mark for async tests
+pytestmark = pytest.mark.asyncio
+
 BASE_URL = "http://test-agentkit.local"
-REGISTER_ENDPOINT = f"{BASE_URL}/v1/agents/register"
-RUN_ENDPOINT_TPL = f"{BASE_URL}/v1/agents/{{agent_id}}/run"
+# Endpoints relative to base_url used by httpx.AsyncClient
+REGISTER_ENDPOINT_REL = "/v1/agents/register"
+RUN_ENDPOINT_TPL_REL = "/v1/agents/{agent_id}/run"
+
+# Ops-Core related constants for testing
+OPSCORE_BASE_URL = "http://test-opscore.local"
+OPSCORE_STATE_ENDPOINT_TPL = f"{OPSCORE_BASE_URL}/v1/opscore/agent/{{agent_id}}/state"
+OPSCORE_API_KEY = "test-opscore-key-123"
 
 @pytest.fixture
-def client():
-    """Provides an AgentKitClient instance for testing."""
-    return AgentKitClient(base_url=BASE_URL)
+async def client():
+    """Provides an async AgentKitClient instance for testing."""
+    client_instance = AgentKitClient(base_url=BASE_URL)
+    yield client_instance
+    # Clean up the client session after tests
+    await client_instance.close()
 
-# --- register_agent Tests ---
+# --- register_agent Tests (Async) ---
 
-def test_register_agent_success(client: AgentKitClient, requests_mock):
-    """Test successful agent registration via SDK."""
+async def test_register_agent_success(client: AgentKitClient, httpx_mock: HTTPXMock):
+    """Test successful agent registration via async SDK."""
     mock_agent_id = "agent-sdk-test-123"
     mock_response = {
         "status": "success",
         "message": "Agent registered.",
         "data": {"agentId": mock_agent_id}
     }
-    requests_mock.post(REGISTER_ENDPOINT, json=mock_response, status_code=201)
+    httpx_mock.add_response(method="POST", url=f"{BASE_URL}{REGISTER_ENDPOINT_REL}", json=mock_response, status_code=201)
 
-    agent_id = client.register_agent(
+    agent_id = await client.register_agent(
         agent_name="SDKTestAgent",
         capabilities=["sdk"],
         version="0.1",
@@ -34,21 +49,22 @@ def test_register_agent_success(client: AgentKitClient, requests_mock):
     )
 
     assert agent_id == mock_agent_id
-    history = requests_mock.request_history
-    assert len(history) == 1
-    assert history[0].method == "POST"
-    assert history[0].url == REGISTER_ENDPOINT
-    assert history[0].json()["agentName"] == "SDKTestAgent"
-    assert history[0].json()["contactEndpoint"] == "http://sdk-agent.test/"
-    assert "metadata" in history[0].json()
+    request = httpx_mock.get_request()
+    assert request is not None
+    assert request.method == "POST"
+    assert str(request.url) == f"{BASE_URL}{REGISTER_ENDPOINT_REL}"
+    request_json = request.read().decode()
+    assert '"agentName": "SDKTestAgent"' in request_json
+    assert '"contactEndpoint": "http://sdk-agent.test/"' in request_json
+    assert '"metadata": {' in request_json
 
-def test_register_agent_api_error(client: AgentKitClient, requests_mock):
-    """Test handling of API error (e.g., 409 Conflict) during registration."""
+async def test_register_agent_api_error(client: AgentKitClient, httpx_mock: HTTPXMock):
+    """Test handling of API error (e.g., 409 Conflict) during async registration."""
     error_detail = "Agent with name 'SDKTestAgent' already registered."
-    requests_mock.post(REGISTER_ENDPOINT, json={"detail": error_detail}, status_code=409)
+    httpx_mock.add_response(method="POST", url=f"{BASE_URL}{REGISTER_ENDPOINT_REL}", json={"detail": error_detail}, status_code=409)
 
     with pytest.raises(AgentKitError) as excinfo:
-        client.register_agent(
+        await client.register_agent(
             agent_name="SDKTestAgent",
             capabilities=["sdk"],
             version="0.1",
@@ -58,50 +74,51 @@ def test_register_agent_api_error(client: AgentKitClient, requests_mock):
     assert excinfo.value.status_code == 409
     assert error_detail in str(excinfo.value)
 
-def test_register_agent_network_error(client: AgentKitClient, requests_mock):
-    """Test handling of network errors during registration."""
-    requests_mock.post(REGISTER_ENDPOINT, exc=requests.exceptions.ConnectionError("Failed to connect")) # Use requests.exceptions
+async def test_register_agent_network_error(client: AgentKitClient, httpx_mock: HTTPXMock):
+    """Test handling of network errors during async registration."""
+    httpx_mock.add_exception(httpx.ConnectError("Failed to connect"))
 
     with pytest.raises(AgentKitError, match="Network error"):
-        client.register_agent(
+        await client.register_agent(
             agent_name="SDKTestAgent",
             capabilities=["sdk"],
             version="0.1",
             contact_endpoint=HttpUrl("http://sdk-agent.test/")
         )
 
-def test_register_agent_unexpected_response(client: AgentKitClient, requests_mock):
-    """Test handling unexpected success response format."""
+async def test_register_agent_unexpected_response(client: AgentKitClient, httpx_mock: HTTPXMock):
+    """Test handling unexpected success response format during async registration."""
     mock_response = {"status": "success", "data": {}} # Missing agentId in data
-    requests_mock.post(REGISTER_ENDPOINT, json=mock_response, status_code=201)
+    httpx_mock.add_response(method="POST", url=f"{BASE_URL}{REGISTER_ENDPOINT_REL}", json=mock_response, status_code=201)
 
     with pytest.raises(AgentKitError, match="unexpected response format"):
-         client.register_agent(
+         await client.register_agent(
             agent_name="SDKTestAgent",
             capabilities=["sdk"],
             version="0.1",
             contact_endpoint=HttpUrl("http://sdk-agent.test/")
         )
 
-# --- send_message Tests ---
+# --- send_message Tests (Async) ---
 
-def test_send_message_success(client: AgentKitClient, requests_mock):
-    """Test successful message sending via SDK."""
+async def test_send_message_success(client: AgentKitClient, httpx_mock: HTTPXMock):
+    """Test successful async message sending via SDK."""
     target_agent_id = "receiver-agent-456"
-    run_endpoint = RUN_ENDPOINT_TPL.format(agent_id=target_agent_id)
+    run_endpoint_rel = RUN_ENDPOINT_TPL_REL.format(agent_id=target_agent_id)
+    run_endpoint_abs = f"{BASE_URL}{run_endpoint_rel}"
     mock_response_data = {"tool_result": "calculation complete", "value": 100}
     mock_api_response = {
         "status": "success",
         "message": "Tool executed.",
         "data": mock_response_data
     }
-    requests_mock.post(run_endpoint, json=mock_api_response, status_code=200)
+    httpx_mock.add_response(method="POST", url=run_endpoint_abs, json=mock_api_response, status_code=200)
 
     sender_id = "caller-789"
     message_type = "tool_invocation"
     payload = {"tool_name": "calculator", "parameters": {"op": "add", "a": 50, "b": 50}}
 
-    response_data = client.send_message(
+    response_data = await client.send_message(
         target_agent_id=target_agent_id,
         sender_id=sender_id,
         message_type=message_type,
@@ -109,23 +126,25 @@ def test_send_message_success(client: AgentKitClient, requests_mock):
     )
 
     assert response_data == mock_response_data # Should return the 'data' part
-    history = requests_mock.request_history
-    assert len(history) == 1
-    assert history[0].method == "POST"
-    assert history[0].url == run_endpoint
-    assert history[0].json()["senderId"] == sender_id
-    assert history[0].json()["messageType"] == message_type
-    assert history[0].json()["payload"] == payload
+    request = httpx_mock.get_request()
+    assert request is not None
+    assert request.method == "POST"
+    assert str(request.url) == run_endpoint_abs
+    request_json = request.read().decode()
+    assert f'"senderId": "{sender_id}"' in request_json
+    assert f'"messageType": "{message_type}"' in request_json
+    assert '"payload": {' in request_json
 
-def test_send_message_api_error_404(client: AgentKitClient, requests_mock):
-    """Test sending message to non-existent agent (404)."""
+async def test_send_message_api_error_404(client: AgentKitClient, httpx_mock: HTTPXMock):
+    """Test sending async message to non-existent agent (404)."""
     target_agent_id = "ghost-agent"
-    run_endpoint = RUN_ENDPOINT_TPL.format(agent_id=target_agent_id)
+    run_endpoint_rel = RUN_ENDPOINT_TPL_REL.format(agent_id=target_agent_id)
+    run_endpoint_abs = f"{BASE_URL}{run_endpoint_rel}"
     error_detail = f"Agent with ID '{target_agent_id}' not found."
-    requests_mock.post(run_endpoint, json={"detail": error_detail}, status_code=404)
+    httpx_mock.add_response(method="POST", url=run_endpoint_abs, json={"detail": error_detail}, status_code=404)
 
     with pytest.raises(AgentKitError) as excinfo:
-        client.send_message(
+        await client.send_message(
             target_agent_id=target_agent_id,
             sender_id="caller-1",
             message_type="query",
@@ -135,20 +154,21 @@ def test_send_message_api_error_404(client: AgentKitClient, requests_mock):
     assert excinfo.value.status_code == 404
     assert error_detail in str(excinfo.value)
 
-def test_send_message_tool_execution_error(client: AgentKitClient, requests_mock):
-    """Test handling application-level error reported by API (e.g., tool failed)."""
+async def test_send_message_tool_execution_error(client: AgentKitClient, httpx_mock: HTTPXMock):
+    """Test handling application-level error reported by API during async send."""
     target_agent_id = "receiver-agent-456"
-    run_endpoint = RUN_ENDPOINT_TPL.format(agent_id=target_agent_id)
+    run_endpoint_rel = RUN_ENDPOINT_TPL_REL.format(agent_id=target_agent_id)
+    run_endpoint_abs = f"{BASE_URL}{run_endpoint_rel}"
     mock_api_response = {
         "status": "error",
         "message": "Tool 'calculator' execution failed: Division by zero",
         "data": {"status": "error", "error_message": "Division by zero"},
         "error_code": "TOOL_EXECUTION_FAILED"
     }
-    requests_mock.post(run_endpoint, json=mock_api_response, status_code=200) # API call is 200 OK
+    httpx_mock.add_response(method="POST", url=run_endpoint_abs, json=mock_api_response, status_code=200) # API call is 200 OK
 
     with pytest.raises(AgentKitError) as excinfo:
-         client.send_message(
+         await client.send_message(
             target_agent_id=target_agent_id,
             sender_id="caller-2",
             message_type="tool_invocation",
@@ -160,16 +180,96 @@ def test_send_message_tool_execution_error(client: AgentKitClient, requests_mock
     assert "(Code: TOOL_EXECUTION_FAILED)" in str(excinfo.value)
     assert excinfo.value.response_data == mock_api_response
 
-def test_send_message_network_error(client: AgentKitClient, requests_mock):
-    """Test handling network error during message sending."""
+async def test_send_message_network_error(client: AgentKitClient, httpx_mock: HTTPXMock):
+    """Test handling network error during async message sending."""
     target_agent_id = "receiver-agent-456"
-    run_endpoint = RUN_ENDPOINT_TPL.format(agent_id=target_agent_id)
-    requests_mock.post(run_endpoint, exc=requests.exceptions.Timeout("Request timed out")) # Use requests.exceptions
+    run_endpoint_rel = RUN_ENDPOINT_TPL_REL.format(agent_id=target_agent_id)
+    run_endpoint_abs = f"{BASE_URL}{run_endpoint_rel}"
+    httpx_mock.add_exception(httpx.TimeoutException("Request timed out"))
 
     with pytest.raises(AgentKitError, match="Network error"):
-        client.send_message(
+        await client.send_message(
             target_agent_id=target_agent_id,
             sender_id="caller-3",
             message_type="ping",
             payload={}
         )
+
+# --- report_state_to_opscore Tests (New Async Tests) ---
+
+@patch('agentkit.sdk.client.os.getenv')
+@patch('agentkit.sdk.client.datetime')
+async def test_report_state_success(mock_dt, mock_getenv, client: AgentKitClient, httpx_mock: HTTPXMock):
+    """Test successful state reporting to Ops-Core."""
+    mock_getenv.side_effect = lambda key, default=None: OPSCORE_BASE_URL if key == "OPSCORE_API_URL" else OPSCORE_API_KEY if key == "OPSCORE_API_KEY" else default
+    mock_now = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    mock_dt.now.return_value = mock_now
+
+    agent_id = "opscore-agent-1"
+    state = "active"
+    details = {"task": "processing data"}
+    target_url = OPSCORE_STATE_ENDPOINT_TPL.format(agent_id=agent_id)
+
+    httpx_mock.add_response(method="POST", url=target_url, status_code=200)
+
+    await client.report_state_to_opscore(agent_id=agent_id, state=state, details=details)
+
+    request = httpx_mock.get_request()
+    assert request is not None
+    assert request.method == "POST"
+    assert str(request.url) == target_url
+    assert request.headers["Authorization"] == f"Bearer {OPSCORE_API_KEY}"
+    assert request.headers["Content-Type"] == "application/json"
+
+    request_json = request.read().decode()
+    assert f'"agentId": "{agent_id}"' in request_json
+    assert f'"state": "{state}"' in request_json
+    assert f'"timestamp": "{mock_now.isoformat()}"' in request_json
+    assert '"details": {"task": "processing data"}' in request_json
+
+@patch('agentkit.sdk.client.os.getenv')
+async def test_report_state_missing_config_url(mock_getenv, client: AgentKitClient):
+    """Test error handling when OPSCORE_API_URL is not set."""
+    mock_getenv.side_effect = lambda key, default=None: None if key == "OPSCORE_API_URL" else OPSCORE_API_KEY if key == "OPSCORE_API_KEY" else default
+
+    with pytest.raises(AgentKitError, match="Configuration error: OPSCORE_API_URL not set"):
+        await client.report_state_to_opscore(agent_id="test-agent", state="idle")
+
+@patch('agentkit.sdk.client.os.getenv')
+async def test_report_state_missing_config_key(mock_getenv, client: AgentKitClient):
+    """Test error handling when OPSCORE_API_KEY is not set."""
+    mock_getenv.side_effect = lambda key, default=None: OPSCORE_BASE_URL if key == "OPSCORE_API_URL" else None if key == "OPSCORE_API_KEY" else default
+
+    with pytest.raises(AgentKitError, match="Configuration error: OPSCORE_API_KEY not set"):
+        await client.report_state_to_opscore(agent_id="test-agent", state="idle")
+
+@patch('agentkit.sdk.client.os.getenv')
+async def test_report_state_opscore_api_error(mock_getenv, client: AgentKitClient, httpx_mock: HTTPXMock):
+    """Test handling API error from Ops-Core during state reporting."""
+    mock_getenv.side_effect = lambda key, default=None: OPSCORE_BASE_URL if key == "OPSCORE_API_URL" else OPSCORE_API_KEY if key == "OPSCORE_API_KEY" else default
+
+    agent_id = "opscore-agent-2"
+    state = "error"
+    target_url = OPSCORE_STATE_ENDPOINT_TPL.format(agent_id=agent_id)
+    error_detail = "Invalid state transition"
+    httpx_mock.add_response(method="POST", url=target_url, status_code=400, json={"detail": error_detail})
+
+    with pytest.raises(AgentKitError) as excinfo:
+        await client.report_state_to_opscore(agent_id=agent_id, state=state)
+
+    assert excinfo.value.status_code == 400
+    assert "Ops-Core API error" in str(excinfo.value)
+    assert error_detail in str(excinfo.value)
+
+@patch('agentkit.sdk.client.os.getenv')
+async def test_report_state_network_error(mock_getenv, client: AgentKitClient, httpx_mock: HTTPXMock):
+    """Test handling network error during state reporting."""
+    mock_getenv.side_effect = lambda key, default=None: OPSCORE_BASE_URL if key == "OPSCORE_API_URL" else OPSCORE_API_KEY if key == "OPSCORE_API_KEY" else default
+
+    agent_id = "opscore-agent-3"
+    state = "idle"
+    target_url = OPSCORE_STATE_ENDPOINT_TPL.format(agent_id=agent_id)
+    httpx_mock.add_exception(httpx.ConnectError("Failed to connect to Ops-Core"))
+
+    with pytest.raises(AgentKitError, match="Network error communicating with Ops-Core API"):
+        await client.report_state_to_opscore(agent_id=agent_id, state=state)

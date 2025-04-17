@@ -16,3 +16,4 @@ python-dotenv
 pytest-asyncio # For running async tests with pytest
 pytest-httpserver # For mocking HTTP endpoints in integration tests
 pytest-mock # For mocking objects/functions in unit tests
+pytest-httpx # For mocking httpx requests in tests

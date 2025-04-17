@@ -1,4 +1,7 @@
-import requests
+import httpx
+import os
+import logging
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from urllib.parse import urljoin
 from pydantic import HttpUrl # For type hinting contactEndpoint
@@ -6,6 +9,8 @@ from pydantic import HttpUrl # For type hinting contactEndpoint
 # Import relevant models if needed for type hinting or data construction,
 # though often SDKs redefine simplified versions or just use dicts.
 # from agentkit.core.models import AgentMetadata # Example
+
+logger = logging.getLogger(__name__)
 
 class AgentKitError(Exception):
     """Custom exception for AgentKit SDK errors."""
@@ -16,7 +21,8 @@ class AgentKitError(Exception):
 
 class AgentKitClient:
     """
-    Client for interacting with the AgentKit API.
+    Asynchronous client for interacting with the AgentKit API.
+    Requires methods to be awaited.
     """
     def __init__(self, base_url: str = "http://localhost:8000"):
         """
@@ -26,16 +32,18 @@ class AgentKitClient:
             base_url: The base URL of the running AgentKit API service.
         """
         self.base_url = base_url
-        self._session = requests.Session() # Use a session for potential connection pooling
+        # Use httpx.AsyncClient for async requests
+        self._client = httpx.AsyncClient(base_url=self.base_url, timeout=30.0)
 
-    def _make_request(self, method: str, endpoint: str, **kwargs) -> Dict[str, Any]:
-        """Helper method to make requests and handle common errors."""
-        url = urljoin(self.base_url, endpoint)
+    async def _make_request(self, method: str, endpoint: str, **kwargs) -> Dict[str, Any]:
+        """Helper method to make async requests and handle common errors."""
+        # urljoin is not needed if base_url is set in AsyncClient
+        # url = urljoin(self.base_url, endpoint)
         try:
-            response = self._session.request(method, url, **kwargs)
-            response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+            response = await self._client.request(method, endpoint, **kwargs)
+            response.raise_for_status() # Raise HTTPStatusError for bad responses (4xx or 5xx)
             return response.json()
-        except requests.exceptions.HTTPError as e: # Catch HTTPError first
+        except httpx.HTTPStatusError as e: # Catch HTTPStatusError first
             # Handle HTTP errors (4xx, 5xx)
             status_code = e.response.status_code
             error_data = None # Initialize error_data
@@ -43,17 +51,20 @@ class AgentKitClient:
                 # Try to get error details from response body
                 error_data = e.response.json()
                 detail = error_data.get("detail", str(e))
-            except requests.exceptions.JSONDecodeError:
+            except httpx.DecodingError: # Use httpx specific decoding error
                 detail = str(e) # Use the base exception string if JSON fails
             raise AgentKitError(f"AgentKit API error (HTTP {status_code}): {detail}", status_code=status_code, response_data=error_data) from e
-        except requests.exceptions.RequestException as e: # Catch other network errors last
+        except httpx.RequestError as e: # Catch other network errors last (ConnectError, Timeout, etc.)
             # Handle network errors, timeouts, etc.
             raise AgentKitError(f"Network error communicating with AgentKit API: {e}") from e
-        except requests.exceptions.JSONDecodeError as e: # Handle JSON decoding errors specifically if needed
+        except httpx.DecodingError as e: # Handle JSON decoding errors specifically if needed
              raise AgentKitError(f"Failed to decode JSON response from AgentKit API: {e}") from e
 
+    async def close(self):
+        """Closes the underlying httpx client."""
+        await self._client.aclose()
 
-    def register_agent(
+    async def register_agent(
         self,
         agent_name: str,
         capabilities: List[str],
@@ -62,7 +73,7 @@ class AgentKitClient:
         metadata: Optional[Dict[str, Any]] = None
     ) -> str:
         """
-        Registers a new agent with the AgentKit service.
+        Registers a new agent with the AgentKit service (asynchronously).
 
         Args:
             agent_name: Unique name for the agent.
@@ -89,7 +100,7 @@ class AgentKitClient:
         if payload["metadata"] is None:
             del payload["metadata"]
 
-        response_data = self._make_request("POST", endpoint, json=payload)
+        response_data = await self._make_request("POST", endpoint, json=payload)
 
         # Check application-level success status from ApiResponse model
         if response_data.get("status") == "success" and "data" in response_data and "agentId" in response_data["data"]:
@@ -99,7 +110,7 @@ class AgentKitClient:
             message = response_data.get("message", "Registration failed with unexpected response format.")
             raise AgentKitError(message, response_data=response_data)
 
-    def send_message(
+    async def send_message(
         self,
         target_agent_id: str,
         sender_id: str,
@@ -108,7 +119,7 @@ class AgentKitClient:
         session_context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Sends a message to a specific agent via the AgentKit service.
+        Sends a message to a specific agent via the AgentKit service (asynchronously).
 
         Args:
             target_agent_id: The ID of the agent to send the message to.
@@ -136,7 +147,7 @@ class AgentKitClient:
         if message_data["sessionContext"] is None:
             del message_data["sessionContext"]
 
-        response_data = self._make_request("POST", endpoint, json=message_data)
+        response_data = await self._make_request("POST", endpoint, json=message_data)
 
         # Check application-level success status
         if response_data.get("status") == "success":
@@ -151,6 +162,83 @@ class AgentKitClient:
             full_message = f"{message} (Code: {error_code})" if error_code else message
             raise AgentKitError(full_message, response_data=response_data)
 
+    async def report_state_to_opscore(
+        self,
+        agent_id: str,
+        state: str,
+        details: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """
+        Reports the agent's current state to the Ops-Core service (asynchronously).
+
+        Requires OPSCORE_API_URL and OPSCORE_API_KEY environment variables to be set.
+
+        Args:
+            agent_id: The ID of the agent reporting its state.
+            state: The current state (e.g., "idle", "active", "error").
+            details: Optional dictionary with additional context (e.g., error message).
+
+        Raises:
+            AgentKitError: If reporting state fails due to configuration issues,
+                           API errors, or network problems.
+        """
+        opscore_url = os.getenv("OPSCORE_API_URL")
+        opscore_api_key = os.getenv("OPSCORE_API_KEY")
+
+        if not opscore_url:
+            logger.error("OPSCORE_API_URL environment variable not set. Cannot report state.")
+            raise AgentKitError("Configuration error: OPSCORE_API_URL not set.")
+        if not opscore_api_key:
+            # Log warning but allow attempt if URL is set, maybe auth is optional/different?
+            # Or raise error immediately depending on Ops-Core requirements.
+            # Let's raise for now assuming key is mandatory.
+            logger.error("OPSCORE_API_KEY environment variable not set. Cannot report state.")
+            raise AgentKitError("Configuration error: OPSCORE_API_KEY not set.")
+
+
+        endpoint = f"/v1/opscore/agent/{agent_id}/state"
+        # Construct URL relative to Ops-Core base URL
+        full_url = urljoin(opscore_url, endpoint)
+
+        payload = {
+            "agentId": agent_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "state": state,
+            "details": details if details is not None else {} # Ensure details is always a dict
+        }
+
+        headers = {
+            # Assuming Bearer token auth for Ops-Core, adjust if different
+            "Authorization": f"Bearer {opscore_api_key}",
+            "Content-Type": "application/json"
+        }
+
+        try:
+            # Use the client directly for external URL, not _make_request which uses base_url
+            response = await self._client.post(full_url, json=payload, headers=headers)
+            response.raise_for_status() # Raise HTTPStatusError for bad responses (4xx or 5xx)
+            logger.info(f"Successfully reported state '{state}' for agent {agent_id} to Ops-Core.")
+            # Optionally return response data if Ops-Core sends anything meaningful back
+            # return response.json()
+            return None # Indicate success
+        except httpx.HTTPStatusError as e:
+            status_code = e.response.status_code
+            error_data = None
+            try:
+                error_data = e.response.json()
+                detail = error_data.get("detail", str(e))
+            except httpx.DecodingError:
+                detail = str(e)
+            logger.error(f"Failed to report state to Ops-Core (HTTP {status_code}): {detail}", exc_info=True)
+            raise AgentKitError(f"Ops-Core API error (HTTP {status_code}): {detail}", status_code=status_code, response_data=error_data) from e
+        except httpx.RequestError as e:
+            logger.error(f"Network error reporting state to Ops-Core: {e}", exc_info=True)
+            raise AgentKitError(f"Network error communicating with Ops-Core API: {e}") from e
+        except Exception as e: # Catch any other unexpected errors
+            logger.error(f"Unexpected error reporting state to Ops-Core: {e}", exc_info=True)
+            raise AgentKitError(f"Unexpected error: {e}") from e
+
+
     # --- Other SDK methods to be added later ---
-    # def list_agents(...)
-    # def get_agent_info(...)
+    # async def list_agents(...)
+    # async def get_agent_info(...)

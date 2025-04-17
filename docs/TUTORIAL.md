@@ -122,4 +122,89 @@ Remember to handle the response structure appropriately based on the `litellm` o
 
 ---
 
-This concludes the tutorial on using the `GenericLLMTool`. You can now integrate powerful language model capabilities into your AgentKit agents!
+## 7. Making Agents "Ops-Core Aware" (State Reporting)
+
+If you are integrating AgentKit within the broader Opspawn ecosystem, your agents will likely need to report their status (e.g., `idle`, `active`, `error`) to the Ops-Core lifecycle management system. This allows Ops-Core to track agent health and orchestrate workflows effectively.
+
+### Prerequisites for Ops-Core Integration
+
+1.  **Ops-Core Running:** An instance of the Ops-Core API service must be running and accessible.
+2.  **Configuration:** Your environment (typically the `.env` file) must contain the following variables:
+    *   `OPSCORE_API_URL`: The base URL of the running Ops-Core API (e.g., `http://localhost:8080`).
+    *   `OPSCORE_API_KEY`: The API key required to authenticate with Ops-Core.
+    Refer to `docs/configuration.md` for details on setting these.
+
+### Reporting State using the SDK
+
+The AgentKit SDK provides a dedicated asynchronous method for this: `report_state_to_opscore`.
+
+```python
+import asyncio
+from agentkit.sdk.client import AgentKitClient, AgentKitError
+from dotenv import load_dotenv
+import os
+
+# Load .env file
+load_dotenv()
+
+async def main():
+    # Ensure Ops-Core config is loaded (SDK checks internally too)
+    if not os.getenv("OPSCORE_API_URL") or not os.getenv("OPSCORE_API_KEY"):
+        print("Error: OPSCORE_API_URL and OPSCORE_API_KEY must be set in .env")
+        return
+
+    # Assume client is initialized and a valid agent_id exists
+    client = AgentKitClient() # Use AgentKit API URL if needed
+    my_agent_id = "your_registered_agent_id" # The ID of the agent reporting state
+
+    try:
+        # Example: Report 'idle' state after registration or task completion
+        print(f"Reporting state 'idle' for agent {my_agent_id}...")
+        await client.report_state_to_opscore(
+            agent_id=my_agent_id,
+            state="idle"
+        )
+        print("State reported successfully.")
+
+        # Example: Report 'active' state when starting a task
+        print(f"Reporting state 'active' for agent {my_agent_id}...")
+        await client.report_state_to_opscore(
+            agent_id=my_agent_id,
+            state="active",
+            details={"current_task": "processing_data"} # Optional details
+        )
+        print("State reported successfully.")
+
+        # Example: Report 'error' state
+        # print(f"Reporting state 'error' for agent {my_agent_id}...")
+        # await client.report_state_to_opscore(
+        #     agent_id=my_agent_id,
+        #     state="error",
+        #     details={"error_code": "TASK_FAILED", "message": "Something went wrong"}
+        # )
+        # print("State reported successfully.")
+
+    except AgentKitError as e:
+        print(f"Error reporting state to Ops-Core: {e}")
+    finally:
+        await client.close() # Close the client session
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+### Key Considerations
+
+*   **When to Report:** Agents should report their state at significant lifecycle events:
+    *   After successful registration (`idle` or `ready`).
+    *   When starting to process a task/message (`active`).
+    *   After successfully completing a task (`idle`).
+    *   When encountering an unrecoverable error (`error` with details).
+*   **Asynchronous:** The `report_state_to_opscore` method is asynchronous and must be `await`ed. Use background tasks (like in `examples/opscore_aware_agent.py`) if reporting state from within a synchronous request handler in your agent's framework (e.g., Flask).
+*   **Error Handling:** Implement appropriate error handling in your agent for cases where state reporting to Ops-Core fails (e.g., network issues, Ops-Core API errors).
+
+Refer to the `examples/opscore_aware_agent.py` script for a more complete example of an agent implementing state reporting within a FastAPI application.
+
+---
+
+This concludes the tutorial. You can now integrate powerful language model capabilities and make your agents integrate with the Ops-Core lifecycle management system!

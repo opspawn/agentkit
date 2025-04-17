@@ -1,60 +1,50 @@
-# Active Context: AgentKit Python Module (Post-Task B6)
+# Active Context: AgentKit Python Module (Post-Task B8)
 
 ## 1. Current Work Focus
 
--   **Phase 5: Documentation & Finalization:** Complete.
--   **Backlog Task B1: Implement asynchronous messaging support:** **Complete (Synchronous Dispatch Implemented).**
+-   **Backlog Tasks:** Completed B7 (Ops-Core Readiness) and B8 (LLM Assistance Docs).
+-   **Current State:** AgentKit core functionality is stable. Preparatory work for Ops-Core integration is complete from AgentKit's side. Documentation updated.
 
 ## 2. Recent Changes
 
--   **Task 5.1 & 5.2 Complete:** `README.md` updated, API docs reviewed.
--   **Task 5.3 Complete:**
-    -   Added `litellm` and `python-dotenv` dependencies.
-    -   Implemented `GenericLLMTool` using `litellm`.
-    -   Registered the tool.
-    -   Updated Docker Compose for `.env` access.
-    -   Created `llm_agent_example.py`.
-    -   Created `examples/README.md`.
-    -   Created `docs/TUTORIAL.md`.
-    -   Added unit tests for `GenericLLMTool` (`tests/tools/test_llm_tool.py`).
-    -   Added live integration test (`tests/integration/test_llm_tool_live.py`) marked with `live_llm`.
-    -   Created `.env` file for live test API key.
-    -   Created `pytest.ini` to configure markers and asyncio mode, resolving test warnings.
-    -   Verified both unit and live tests pass.
--   **Tracking Update:** Updated `TASK.md` to mark Task 5.3 complete.
--   **Task 5.4 Complete:** Created `docs/configuration.md` detailing environment variables (`.env`), Docker configuration, testing setup (`pytest.ini`), and external dependencies (`litellm`). Updated `TASK.md`.
--   **Task 5.5 Complete:** Reviewed and updated `README.md`, `docs/TUTORIAL.md`, `docs/configuration.md`, `examples/README.md`, and Memory Bank files (`activeContext.md`, `progress.md`) for consistency and accuracy. Updated `TASK.md`.
--   **Task B1 Complete (Sync Dispatch):**
-    -   Modified `agentkit/api/endpoints/messaging.py` to use `httpx`.
-    -   Added logic to dispatch non-tool messages to the target agent's `contactEndpoint`.
-    -   Added `pytest-httpserver` dependency.
-    -   Created integration tests (`tests/integration/test_message_dispatch.py`).
-    -   Updated `README.md` documentation.
+-   **Task B7 Complete (Ops-Core Readiness):**
+    -   Refactored SDK client (`agentkit/sdk/client.py`) to use `httpx` and be asynchronous.
+    -   Added `report_state_to_opscore` method to SDK for agents to report status directly to Ops-Core.
+    -   Updated configuration (`docs/configuration.md`, `.env.example`) to include `OPSCORE_API_URL` and `OPSCORE_API_KEY`.
+    -   Added example agent `examples/opscore_aware_agent.py`.
+    -   Added `pytest-httpx` dependency.
+    -   Updated SDK unit tests (`tests/sdk/test_client.py`) for async and added tests for `report_state_to_opscore`.
+    -   Added integration tests (`tests/integration/test_opscore_integration.py`) using `pytest-httpserver` to mock Ops-Core.
+    -   Updated `docs/TUTORIAL.md` and `README.md` to mention Ops-Core integration capability.
     -   Updated `TASK.md`.
--   **Task B1.1 Complete:** Created `examples/responder_agent.py` and `examples/requester_agent.py` to demonstrate synchronous dispatch. Updated `examples/README.md` and `TASK.md`.
--   **Task B6 Complete:** Created `examples/sequential_tool_agent.py` demonstrating calling `mock_tool` then `generic_llm_completion`. Updated `examples/README.md` and `TASK.md`.
+-   **Task B8 Complete (LLM Assistance Docs):**
+    -   Created `docs/building_agents_with_llms.md` guide for developers using LLMs to build AgentKit agents.
+    -   Created `docs/agentkit_llm_context.txt` comprehensive context bundle for pasting into LLMs, focusing on standalone AgentKit development first.
+    -   Refined both documents based on feedback to clarify focus and include setup instructions.
+    -   Updated `TASK.md`.
+-   **Integration Docs Created:**
+    -   Created `docs/opscore_integration.md` (guide for AgentKit developers).
+    -   Created `docs/agentkit_integration_for_opscore.md` (technical guide for Ops-Core developers).
 
 ## 3. Next Steps (Immediate)
 
--   **Next Steps:** Consider remaining backlog tasks (B1-Async, B2-B5).
--   **Update `progress.md`:** Reflect the completion of Task B6.
+-   **Finalize AgentKit Session:** Perform Git operations (add, commit, push) for all changes made in this session.
+-   **Identify Next Focus:** Based on user direction, the next focus will likely shift to Ops-Core development.
+-   **Update `progress.md`:** Reflect the completion of Tasks B7 and B8.
 
 ## 4. Active Decisions & Considerations
 
--   Documentation review confirmed consistency across key files.
--   Implemented synchronous message dispatch; full async support remains a potential future enhancement within B1. Decided to defer async implementation for now.
+-   Decision made to complete AgentKit preparations (Task B7) and associated documentation (Task B8, integration guides) before shifting focus to Ops-Core development.
+-   LLM assistance documentation focuses on standalone AgentKit usage first, positioning Ops-Core integration as an optional, subsequent step.
 
 ## 5. Important Patterns & Preferences
 
--   **Clear Documentation:** Ensure configuration documentation is clear, accurate, and easy for developers to follow.
--   **Separation of Concerns:** Keep configuration details separate from core code logic.
--   **Security:** Emphasize secure handling of sensitive information like API keys (using `.env` and `.gitignore`).
+-   Continued emphasis on clear documentation for different audiences (developers using AgentKit, developers integrating with AgentKit, LLM assistants).
+-   Importance of providing comprehensive context bundles (`.txt` file) for effective LLM assistance.
+-   Testing integration points using mock servers (`pytest-httpserver`, `pytest-httpx`).
 
 ## 6. Learnings & Insights
 
--   Adding integration tests, even simple ones, provides valuable confirmation of end-to-end functionality.
--   Proper pytest configuration (markers, asyncio settings) improves test suite clarity and maintainability.
--   Handling external dependencies like LLMs requires clear documentation for user setup (e.g., `.env` files), as implemented in `docs/configuration.md`.
--   Explicitly documenting the role of `.env` files in different contexts (Docker vs. local scripts/tests) was confirmed as important and addressed in `docs/configuration.md` and `README.md`.
--   Consolidating documentation ensures a smoother user experience.
--   Adding basic inter-agent message dispatch significantly enhances AgentKit's standalone utility for simpler multi-agent scenarios.
+-   Refactoring synchronous code (SDK client) to asynchronous requires careful updates to tests and usage patterns.
+-   Creating documentation specifically for LLM assistants requires a different approach than human-focused docs, including explicit guidance and context bundling.
+-   Clarifying the primary focus (standalone AgentKit vs. Ops-Core integration) is important for documentation clarity.

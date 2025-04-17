@@ -1,0 +1,1101 @@
+# AgentKit LLM Development Context Bundle (Focus: Standalone AgentKit)
+# Version: 2025-04-17
+# Purpose: Provide this entire file as context to an LLM assistant (like Claude, Gemini, ChatGPT)
+#          when asking it to help generate code for an AgentKit agent.
+#
+# LLM Assistant Guidance:
+# - Project Source: The code should be generated for the AgentKit project available at: https://github.com/opspawn/agentkit.git
+# - Setup: Assume the user has cloned the repo, created a Python virtual environment, and run `pip install -r requirements.txt`.
+# - Primary Focus: Help the user build a functional, standalone agent using AgentKit's core features:
+#   - Agent registration (`register_agent`)
+#   - Message handling (receiving messages at the agent's `contactEndpoint`)
+#   - Tool invocation (`send_message` with `message_type='tool_invocation'`)
+#   - Use of configuration via `.env` files (especially for tool API keys like LLMs).
+# - Ops-Core Readiness (Optional): The SDK includes a method `report_state_to_opscore`.
+#   Only include calls to this method if the user explicitly asks for the agent
+#   to be made "Ops-Core ready" or asks for state reporting. If included, remind the user
+#   that `OPSCORE_API_URL` and `OPSCORE_API_KEY` environment variables are required.
+# - Assume asynchronous operations (`async`/`await`) when using the SDK.
+# - Use FastAPI for agent server examples unless otherwise specified.
+# - Refer to the included documentation and code snippets for correct API usage, model definitions, and configuration patterns.
+
+################################################################################
+# --- START FILE: README.md ---
+################################################################################
+
+# AgentKit Python Module (Opspawn)
+
+<!-- [![CI Status](https://github.com/YOUR_ORG/YOUR_REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_ORG/YOUR_REPO/actions/workflows/ci.yml) --> <!-- Placeholder CI Badge -->
+
+Core Python module for the Opspawn AgentKit, enabling rapid prototyping and building of autonomous AI agents.
+
+## Overview
+
+AgentKit provides a foundational framework for developing AI agents in Python. It includes modules and APIs for:
+
+*   **Agent Registration:** Registering agents with the system and managing their metadata.
+*   **Messaging:** Sending structured messages via a central API. The API handles internal tool invocations and dispatches other message types to the target agent's registered `contactEndpoint`.
+*   **Tool Integration:** Allowing agents to invoke registered tools (external APIs or internal functions).
+
+This module is designed with a local-first approach for ease of development and testing, using FastAPI for the core API and Pydantic for data validation. Core functionality has been validated through unit, integration, load, and user acceptance testing.
+
+## Features
+
+*   RESTful API for agent management and interaction.
+*   Standardized JSON-based communication protocols.
+*   In-memory storage for agent and tool registration.
+*   Python SDK for client-side interaction.
+*   Command-line interface (CLI) for testing and basic operations.
+*   Extensible tool integration interface (supports external HTTP tools).
+*   Containerized deployment using Docker.
+*   Example agents demonstrating core SDK usage.
+*   Generic LLM tool integration using `litellm` (requires API key configuration).
+*   SDK support for reporting agent state to Ops-Core (requires Ops-Core configuration).
+
+## Getting Started
+
+### Prerequisites
+
+*   Python 3.9+
+*   Docker & Docker Compose
+*   Git
+
+### Installation
+
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/opspawn/agentkit.git
+    cd agentkit
+    ```
+
+2.  **Create and activate a virtual environment:**
+    ```bash
+    python3 -m venv .venv
+    source .venv/bin/activate
+    # On Windows use: .venv\Scripts\activate
+    ```
+
+3.  **Install dependencies:**
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+### Configuration (.env)
+
+Some features, particularly the `GenericLLMTool` and related examples/tests, require API keys or other secrets. These should be configured using a `.env` file in the project root.
+
+**See the [Configuration Guide](docs/configuration.md) for details on setting up your `.env` file.**
+
+### Running Locally (Development Server)
+
+You can run the AgentKit API server directly using Uvicorn (useful for development):
+
+```bash
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+The API will be available at `http://localhost:8000`. The interactive API documentation (Swagger UI) can be accessed at `http://localhost:8000/docs`. Note that the mock tool service will not be available when running this way.
+
+### Running with Docker Compose (Recommended for Full Functionality)
+
+This method runs the AgentKit API and the mock tool service, required for some examples.
+
+1.  **Build and start the services:**
+    ```bash
+    docker-compose up -d --build
+    ```
+
+The API will be available at `http://localhost:8000`.
+
+To stop the services:
+```bash
+docker-compose down
+```
+
+## Usage
+
+### Python SDK
+
+The SDK provides a convenient way to interact with the AgentKit API from Python scripts.
+
+```python
+# Example SDK Usage (ensure AgentKit API is running)
+import asyncio
+from agentkit.sdk.client import AgentKitClient, AgentKitError
+from pydantic import HttpUrl
+
+async def sdk_example():
+    client = AgentKitClient(base_url="http://localhost:8000") # Point to base URL
+    agent_id = None
+    try:
+        # Register an agent
+        print("Registering agent...")
+        agent_id = await client.register_agent(
+            agent_name="MyPythonAgentSDK",
+            capabilities=["process_data", "use_calculator"],
+            version="1.2",
+            contact_endpoint=HttpUrl("http://my-agent-service:9000/callback"), # Placeholder
+            metadata={"description": "Processes incoming data streams."}
+        )
+        print(f"Agent registered with ID: {agent_id}")
+
+        # Send a message (e.g., invoking the mock tool)
+        print("\nInvoking mock_tool...")
+        response_data = await client.send_message(
+            target_agent_id=agent_id, # Can be self or another agent
+            sender_id="sdk_trigger_001",
+            message_type="tool_invocation",
+            payload={
+                "tool_name": "mock_tool", # Use the registered mock tool
+                "arguments": {"query": "Test query from SDK"}
+            },
+            session_context={"example_session": "sdk_run_1"}
+        )
+        print(f"Tool invocation response: {response_data}")
+
+        # Example: Send a message to be dispatched to another agent's endpoint
+        # print("\nSending message for dispatch...")
+        # target_agent_id_dispatch = "some_other_registered_agent_id" # Replace if needed
+        # response_data_dispatch = await client.send_message(
+        #     target_agent_id=target_agent_id_dispatch,
+        #     sender_id=agent_id, # Send from the agent we just registered
+        #     message_type="custom_request",
+        #     payload={"request_details": "Please process this task."}
+        # )
+        # print(f"Dispatch message response: {response_data_dispatch}")
+
+    except AgentKitError as e:
+        print(f"An AgentKit API error occurred: {e}")
+        if e.response_data:
+            print(f"Response: {e.response_data}")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+    finally:
+        if client:
+            await client.close()
+
+if __name__ == "__main__":
+    # Note: This example assumes the AgentKit API is running.
+    # It doesn't run an agent server itself.
+    # asyncio.run(sdk_example()) # Uncomment to run
+    pass
+
+```
+
+### Command-Line Interface (CLI)
+
+The CLI offers quick commands for common tasks.
+
+**Register an agent:**
+
+```bash
+python -m agentkit.cli.main register \
+    --name "MyCliAgent" \
+    --version "1.0" \
+    --endpoint "http://my-cli-agent.local/api" \
+    --capability "reporting" \
+    --capability "logging" \
+    --metadata '{"description": "Agent registered via CLI"}'
+```
+
+**Send a message:**
+
+```bash
+# Example: Sending a simple query
+python -m agentkit.cli.main send <TARGET_AGENT_ID> \
+    --sender "cli_sender_01" \
+    --type "intent_query" \
+    '{"query": "What is the current status?"}' # This will be dispatched if target agent has contactEndpoint
+
+# Example: Invoking the mock tool
+python -m agentkit.cli.main send <TARGET_AGENT_ID> \
+    --sender "cli_tool_user_02" \
+    --type "tool_invocation" \
+    '{"tool_name": "mock_tool", "arguments": {"query": "Test query from CLI"}}'
+# (Note: Other tools like GenericLLMTool can also be invoked,
+# but may require API keys configured via .env. See docs/configuration.md)
+```
+
+*(Run `python -m agentkit.cli.main --help` for more details)*
+
+### Running Examples
+
+The `examples/` directory contains scripts demonstrating SDK usage.
+
+**Prerequisites:** Ensure the AgentKit services are running via Docker Compose:
+```bash
+docker-compose up -d --build
+```
+
+**Run the Ping Agent example:**
+```bash
+python examples/ping_agent.py
+```
+This script registers an agent and sends a message to itself.
+
+**Run the Tool User Agent example:**
+```bash
+python examples/tool_user_agent.py
+```
+This script registers an agent and sends a message to invoke the `mock_tool`.
+
+**Run the LLM Agent example:**
+```bash
+# IMPORTANT: Requires API keys in .env file! See docs/configuration.md
+python examples/llm_agent_example.py
+```
+This script registers an agent and uses the `GenericLLMTool` to make a call to an LLM provider configured via your `.env` file.
+
+## API Documentation
+
+Interactive API documentation (Swagger UI) is available at the `/docs` endpoint when the server is running (e.g., `http://localhost:8000/docs`).
+
+ReDoc documentation is available at `/redoc`.
+
+## Project Structure
+
+```
+agentkit/          # Main package source code
+├── api/           # FastAPI application, endpoints, middleware
+├── cli/           # Command-line interface logic
+├── core/          # Core models (Pydantic) and shared utilities
+├── messaging/     # Logic related to message handling
+├── registration/  # Agent registration logic and storage
+├── sdk/           # Python SDK client
+└── tools/         # Tool interface and registry (incl. GenericLLMTool)
+tests/             # Unit and integration tests (pytest)
+├── api/
+├── cli/
+├── integration/   # Includes live LLM tests and message dispatch tests
+├── mock_services/ # Mock external services for testing
+├── registration/
+├── sdk/
+└── tools/
+docs/              # Project documentation (Markdown)
+├── configuration.md # Environment/config details
+└── TUTORIAL.md      # Step-by-step guide
+examples/          # Example agent implementations
+├── llm_agent_example.py # Example using GenericLLMTool
+├── ping_agent.py
+├── tool_user_agent.py
+└── README.md        # Explanations for examples
+memory-bank/       # Roo's Memory Bank for project context
+.github/workflows/ # CI/CD workflows (GitHub Actions)
+├── ci.yml
+.coverage          # Test coverage report data
+.env               # Local environment variables (API Keys, etc. - DO NOT COMMIT)
+.gitignore         # Specifies intentionally untracked files (should include .env)
+AgentkitDevelopmentDoc.md # Original development requirements doc
+DEVELOPMENT_PLAN.md # Detailed development plan
+Dockerfile         # Container definition for API service
+docker-compose.yml # Docker Compose configuration
+locustfile.py      # Locust load test definition
+main.py            # FastAPI application entry point
+PLANNING.md        # High-level project planning
+pytest.ini         # Pytest configuration (markers, asyncio)
+README.md          # This file
+requirements.txt   # Python dependencies
+TASK.md            # Task checklist
+TESTING_STRATEGY.md # Detailed testing strategy
+UAT_PLAN_TASK_4_5.md # User Acceptance Test plan for Task 4.5
+```
+
+## Contributing
+
+Please refer to `CONTRIBUTING.md` (to be created) for details on how to contribute to this project, including coding standards, pull request guidelines, and issue reporting.
+
+## License
+
+*(Specify License - e.g., MIT, Apache 2.0)* - TBD
+
+################################################################################
+# --- END FILE: README.md ---
+################################################################################
+
+
+################################################################################
+# --- START FILE: docs/configuration.md ---
+################################################################################
+
+# AgentKit Configuration Guide
+
+This document provides a comprehensive guide to configuring the AgentKit Python module environment. It covers environment variables, Docker setup, testing configurations, and external dependencies that require specific setup.
+
+## 1. Environment Variables
+
+AgentKit utilizes environment variables for configuration, particularly for sensitive information like API keys. The primary mechanism for managing these locally is through a `.env` file located at the project root.
+
+### Mechanism
+
+-   Create a file named `.env` in the root directory of the project (`/home/sf2/Workspace/23-opspawn/4-v2/agentkit`).
+-   The AgentKit API service (when run via Docker Compose) and local scripts/tests (using the `python-dotenv` library) automatically load variables defined in this file.
+
+### Security
+
+**IMPORTANT:** The `.env` file should **never** be committed to version control as it often contains sensitive credentials. Ensure your project's `.gitignore` file includes an entry for `.env`.
+
+```gitignore
+# Example .gitignore entry
+.env
+```
+
+### `.env` Template
+
+You can use the following template to create your `.env` file. Populate it with the necessary values for the services you intend to use.
+
+```plaintext
+# .env file for AgentKit Configuration
+
+# --- LLM Provider API Keys (Required for llm_agent_example.py and live tests) ---
+# Add keys for the LLM providers you intend to use via litellm.
+# Only provide keys for the services you will actually call.
+# See litellm documentation for the correct variable names for each provider.
+# Examples:
+# OPENAI_API_KEY=sk-...
+# ANTHROPIC_API_KEY=sk-ant-api03-...
+# COHERE_API_KEY=...
+# AZURE_API_KEY=...
+# AZURE_API_BASE=https://your-deployment.openai.azure.com/
+# AZURE_API_VERSION=2023-07-01-preview
+# HUGGINGFACE_API_KEY=hf_...
+# GEMINI_API_KEY=...
+# Add other provider keys as needed by litellm
+
+# --- Ops-Core Integration (OPTIONAL - Required only for state reporting) ---
+# URL of the running Ops-Core API service
+# OPSCORE_API_URL=http://localhost:8080 # Replace with actual Ops-Core URL if different
+# API Key for authenticating with the Ops-Core API
+# OPSCORE_API_KEY=your_opscore_api_key_here
+
+# --- AgentKit API Service (Optional Overrides) ---
+# These typically do not need to be set, as defaults are handled
+# by the FastAPI application and Docker Compose.
+# HOST=0.0.0.0
+# PORT=8000
+
+# --- Other configurations (if added in the future) ---
+# Example: DATABASE_URL=...
+```
+
+### Specific Variable Details
+
+#### LLM Provider Keys
+-   **Purpose:** Authenticate with external LLM services (OpenAI, Anthropic, etc.).
+-   **Used By:** `GenericLLMTool` via `litellm`.
+-   **Context:** Required when running `examples/llm_agent_example.py` or live integration tests (`pytest -m live_llm`). Also required by the API service in Docker if agents invoke the LLM tool.
+
+#### Ops-Core Integration Variables (Optional)
+-   `OPSCORE_API_URL`: The base URL for the Ops-Core API service.
+-   `OPSCORE_API_KEY`: The API key required to authenticate requests to the Ops-Core API.
+-   **Purpose:** Allow AgentKit agents (via the SDK) to report their state to the Ops-Core lifecycle management system. This is **optional** for basic AgentKit functionality but required if integrating with Ops-Core.
+-   **Used By:** `AgentKitClient.report_state_to_opscore` method.
+-   **Context:** Required only by agents that explicitly implement state reporting for Ops-Core integration (e.g., `examples/opscore_aware_agent.py`).
+
+### Usage Contexts
+
+-   **API Service (Docker Compose):** The `docker-compose.yml` file is configured to use the `.env` file. Variables defined here (especially API keys) are passed into the `api_service` container, making them accessible to the FastAPI application and tools like `GenericLLMTool` when running within Docker.
+-   **Example Scripts (`examples/`):** Scripts like `examples/llm_agent_example.py` directly load the `.env` file using `python-dotenv` when run locally (outside of Docker). They require the relevant LLM API keys (e.g., `OPENAI_API_KEY`) to interact with `litellm`. Scripts using Ops-Core state reporting (`opscore_aware_agent.py`) will require `OPSCORE_API_URL` and `OPSCORE_API_KEY`.
+-   **Live Integration Tests (`tests/integration/`):** Tests marked with `@pytest.mark.live_llm` (e.g., `test_llm_tool_live.py`) also load the `.env` file when run locally via `pytest`. They require the necessary API keys to execute live calls to external LLM services.
+
+## 2. Docker Configuration
+
+Docker is used to containerize the AgentKit API service for consistent deployment and local development/testing.
+
+-   **`Dockerfile`:** Defines the steps to build the Docker image for the `api_service`. This includes installing dependencies from `requirements.txt` and setting up the FastAPI application with Uvicorn.
+-   **`docker-compose.yml`:** Orchestrates the running container(s).
+    -   It defines the `api_service`, builds it using the `Dockerfile`, maps ports (e.g., 8000:8000), and mounts necessary volumes.
+    -   Crucially, it includes `env_file: .env`, which instructs Docker Compose to load variables from the `.env` file in the project root and make them available as environment variables *inside* the `api_service` container.
+
+## 3. Testing Configuration (`pytest.ini`)
+
+The `pytest.ini` file configures the behavior of the `pytest` testing framework for this project.
+
+```ini
+[pytest]
+# Automatically run any asyncio tests with the pytest-asyncio plugin
+asyncio_mode = auto
+
+# Register custom markers for filtering tests
+markers =
+    live_llm: Run tests that make live calls to LLM APIs (requires .env configuration)
+    # Add other markers here if needed
+```
+
+-   **`asyncio_mode = auto`:** Ensures `pytest-asyncio` correctly handles asynchronous tests used in AgentKit (e.g., for FastAPI test clients).
+-   **`markers`:** Defines custom markers like `live_llm`. This allows you to selectively run or skip tests. For example, to run only non-live tests: `pytest -m "not live_llm"`. To run only live LLM tests: `pytest -m live_llm`.
+
+## 4. External Dependencies Requiring Setup
+
+Most Python dependencies are listed in `requirements.txt` and installed automatically via `pip`. However, some require specific user configuration:
+
+-   **`litellm`:**
+    -   **Purpose:** Used by the `GenericLLMTool` (`agentkit/tools/llm_tool.py`) to provide a unified interface for interacting with various Large Language Models (LLMs).
+    -   **Configuration:** Requires API keys for the specific LLM providers you wish to use. These keys **must** be set as environment variables, typically via the `.env` file as described in Section 1. Refer to the official `litellm` documentation for the exact environment variable names required by each supported provider. AgentKit simply passes the environment through; it does not manage the keys directly beyond loading the `.env` file.
+
+Ensure your `.env` file is correctly configured before running examples or tests that utilize the `GenericLLMTool`.
+
+################################################################################
+# --- END FILE: docs/configuration.md ---
+################################################################################
+
+
+################################################################################
+# --- START FILE: docs/TUTORIAL.md ---
+################################################################################
+
+# Tutorial: Using the Generic LLM Tool in AgentKit
+
+This tutorial guides you through setting up and using the built-in `GenericLLMTool` within the AgentKit Python module. This tool allows your agents to interact with a wide variety of Large Language Models (LLMs) supported by the `litellm` library.
+
+## 1. Introduction
+
+AgentKit includes a `GenericLLMTool` (registered as `generic_llm_completion`) that acts as a unified interface to different LLM providers (OpenAI, Anthropic, Google Gemini, etc.). Instead of writing separate code for each provider, you can use this single tool, specifying the desired model and providing your API keys.
+
+## 2. Prerequisites
+
+Before you begin, ensure you have the following set up:
+
+*   **AgentKit Project:** You have cloned or set up the AgentKit Python project.
+*   **Dependencies:** You have installed the necessary Python dependencies from the project root:
+    ```bash
+    pip install -r requirements.txt
+    ```
+*   **AgentKit API Running:** The core AgentKit API service must be running. The recommended way to run it for this tutorial (as it handles environment variables correctly) is using Docker Compose from the project root:
+    ```bash
+    docker-compose up --build api
+    ```
+    Alternatively, if not using Docker, ensure the API is running via `uvicorn main:app --reload --port 8000`.
+*   **LLM API Key(s):** You need an API key from at least one LLM provider (like OpenAI, Anthropic, Cohere, Google AI Studio, etc.) that `litellm` supports.
+
+## 3. Setting Up Your `.env` File
+
+The `GenericLLMTool` securely accesses your LLM API keys via environment variables. `litellm` automatically detects keys set in the environment following specific naming conventions (e.g., `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`).
+
+1.  **Create `.env` File:** In the **root directory** of your AgentKit project (the same level as `docker-compose.yml` and `requirements.txt`), create a file named `.env`.
+2.  **Add API Keys:** Add your API key(s) to this file, one per line, following the required format for `litellm`. For example:
+    ```dotenv
+    # .env file contents
+
+    # Example for OpenAI
+    OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+    # Example for Anthropic
+    # ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+    # Example for Google Gemini
+    # GEMINI_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+    # Add other keys as needed based on litellm documentation
+    ```
+    *Replace the placeholder keys with your actual keys.*
+3.  **Save the File:** Save the `.env` file.
+4.  **Security:** The `.gitignore` file in the project should already be configured to prevent this `.env` file from being accidentally committed to version control. **Never commit your API keys.**
+
+When you run the AgentKit API using `docker-compose up`, the `env_file: .env` directive in `docker-compose.yml` makes these variables available to the API service container, where the `GenericLLMTool` can access them.
+
+## 4. Running the Example (`llm_agent_example.py`)
+
+The `examples/` directory contains a script specifically designed to demonstrate the `GenericLLMTool`.
+
+1.  **Navigate to Project Root:** Open your terminal in the root directory of the AgentKit project.
+2.  **Ensure API is Running:** Make sure the AgentKit API is running (preferably via `docker-compose up api`).
+3.  **Configure Model (Optional):** Open `examples/llm_agent_example.py` in your editor. Find the line:
+    ```python
+    llm_model = "gpt-3.5-turbo"
+    ```
+    Change `"gpt-3.5-turbo"` to the identifier of a model you have an API key for in your `.env` file (e.g., `"claude-3-haiku-20240307"`, `"gemini/gemini-1.5-flash"`). Refer to `litellm` documentation for model identifiers.
+4.  **Run the Script:** Execute the example script:
+    ```bash
+    python examples/llm_agent_example.py
+    ```
+
+## 5. Understanding the Output
+
+The script will:
+1.  Print connection information.
+2.  Register a temporary "dummy" agent (needed to satisfy the API route structure).
+3.  Print the parameters being sent to the `generic_llm_completion` tool.
+4.  Print status messages indicating the tool invocation.
+5.  If successful, print the full JSON response received from the `litellm` library (nested within the AgentKit API response).
+6.  Attempt to extract and print the main text content from the LLM's response.
+
+If an error occurs (e.g., missing API key, invalid model name, network issue), the script will print an error message and potentially the error details received from the API.
+
+## 6. Using the Tool in Your Own Agent
+
+You can invoke the `generic_llm_completion` tool from any agent script using the AgentKit SDK, similar to the example. Here's a simplified snippet:
+
+```python
+import asyncio
+from agentkit.sdk.client import AgentKitClient, AgentKitError
+
+# Assume client is initialized and a valid agent_id exists
+client = AgentKitClient()
+my_agent_id = "your_registered_agent_id" # The ID of the agent making the call
+target_api_agent_id = "any_valid_registered_agent_id" # ID for the API route
+
+async def call_llm_tool():
+    try:
+        tool_payload = {
+            "tool_name": "generic_llm_completion",
+            "arguments": {
+                "model": "gpt-4o", # Or another model
+                "messages": [
+                    {"role": "user", "content": "What is the capital of France?"}
+                ]
+                # Add other optional params like max_tokens, temperature if needed
+            }
+        }
+
+        response_data = await client.send_message( # Use await for async SDK
+            target_agent_id=target_api_agent_id, # Route requires a valid ID
+            sender_id=my_agent_id,
+            message_type="tool_invocation",
+            payload=tool_payload
+        )
+
+        # Process the response_data which contains the tool result
+        if response_data and response_data.get("status") == "success":
+            llm_result = response_data.get("result", {})
+            # Extract content from llm_result based on its structure
+            print("LLM Result:", llm_result)
+
+    except AgentKitError as e:
+        print(f"Error calling LLM tool: {e}")
+    finally:
+        await client.close() # Remember to close the client
+
+# Example usage: asyncio.run(call_llm_tool())
+```
+
+Remember to handle the response structure appropriately based on the `litellm` output for the specific model you called.
+
+---
+
+## 7. Making Agents "Ops-Core Aware" (Optional State Reporting)
+
+*(Note: This section describes an optional capability for agents intended for future integration with the Opspawn Ops-Core system. It is **not required** for basic standalone AgentKit agent functionality.)*
+
+If you are building an agent that will eventually be managed by Ops-Core, it needs to report its status (e.g., `idle`, `active`, `error`) to the Ops-Core lifecycle management system.
+
+### Prerequisites for Ops-Core Integration
+
+1.  **Ops-Core Running:** An instance of the Ops-Core API service must be running and accessible.
+2.  **Configuration:** Your environment (typically the `.env` file) must contain the following variables:
+    *   `OPSCORE_API_URL`: The base URL of the running Ops-Core API (e.g., `http://localhost:8080`).
+    *   `OPSCORE_API_KEY`: The API key required to authenticate with Ops-Core.
+    Refer to `docs/configuration.md` for details on setting these.
+
+### Reporting State using the SDK
+
+The AgentKit SDK provides a dedicated asynchronous method for this: `report_state_to_opscore`.
+
+```python
+import asyncio
+from agentkit.sdk.client import AgentKitClient, AgentKitError
+from dotenv import load_dotenv
+import os
+
+# Load .env file
+load_dotenv()
+
+async def report_status_example():
+    # Ensure Ops-Core config is loaded (SDK checks internally too)
+    if not os.getenv("OPSCORE_API_URL") or not os.getenv("OPSCORE_API_KEY"):
+        print("Error: OPSCORE_API_URL and OPSCORE_API_KEY must be set in .env to report state.")
+        return
+
+    # Assume client is initialized and a valid agent_id exists
+    client = AgentKitClient() # Use AgentKit API URL if needed
+    my_agent_id = "your_registered_agent_id" # The ID of the agent reporting state
+
+    try:
+        # Example: Report 'idle' state after registration or task completion
+        print(f"Reporting state 'idle' for agent {my_agent_id}...")
+        await client.report_state_to_opscore(
+            agent_id=my_agent_id,
+            state="idle"
+        )
+        print("State reported successfully.")
+
+        # Example: Report 'active' state when starting a task
+        print(f"Reporting state 'active' for agent {my_agent_id}...")
+        await client.report_state_to_opscore(
+            agent_id=my_agent_id,
+            state="active",
+            details={"current_task": "processing_data"} # Optional details
+        )
+        print("State reported successfully.")
+
+        # Example: Report 'error' state
+        # print(f"Reporting state 'error' for agent {my_agent_id}...")
+        # await client.report_state_to_opscore(
+        #     agent_id=my_agent_id,
+        #     state="error",
+        #     details={"error_code": "TASK_FAILED", "message": "Something went wrong"}
+        # )
+        # print("State reported successfully.")
+
+    except AgentKitError as e:
+        print(f"Error reporting state to Ops-Core: {e}")
+    finally:
+        await client.close() # Close the client session
+
+if __name__ == "__main__":
+    # This example only shows reporting, not a full agent server
+    # You would integrate these calls into your agent's lifecycle logic
+    asyncio.run(report_status_example())
+```
+
+### Key Considerations for Ops-Core Readiness
+
+*   **When to Report:** If implementing state reporting, call `report_state_to_opscore` at significant lifecycle events: after registration (`idle`), starting a task (`active`), completing a task (`idle`), encountering an error (`error`).
+*   **Asynchronous:** The method is asynchronous (`await`). Use background tasks (like in `examples/opscore_aware_agent.py`) if calling from synchronous code.
+*   **Error Handling:** Implement `try...except AgentKitError` around calls to handle potential communication failures with Ops-Core.
+
+Refer to the `examples/opscore_aware_agent.py` script for a more complete example of an agent implementing state reporting within a FastAPI application (if you need this specific functionality).
+
+---
+
+This concludes the tutorial. You can now integrate powerful language model capabilities into your AgentKit agents!
+
+################################################################################
+# --- END FILE: docs/TUTORIAL.md ---
+################################################################################
+
+
+################################################################################
+# --- START FILE: agentkit/sdk/client.py ---
+################################################################################
+
+import httpx
+import os
+import logging
+from datetime import datetime, timezone
+from typing import List, Dict, Any, Optional
+from urllib.parse import urljoin
+from pydantic import HttpUrl # For type hinting contactEndpoint
+
+# Import relevant models if needed for type hinting or data construction,
+# though often SDKs redefine simplified versions or just use dicts.
+# from agentkit.core.models import AgentMetadata # Example
+
+logger = logging.getLogger(__name__)
+
+class AgentKitError(Exception):
+    """Custom exception for AgentKit SDK errors."""
+    def __init__(self, message: str, status_code: Optional[int] = None, response_data: Optional[Dict] = None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.response_data = response_data
+
+class AgentKitClient:
+    """
+    Asynchronous client for interacting with the AgentKit API.
+    Requires methods to be awaited.
+    """
+    def __init__(self, base_url: str = "http://localhost:8000"):
+        """
+        Initializes the AgentKit client.
+
+        Args:
+            base_url: The base URL of the running AgentKit API service.
+                      Should typically point to the root (e.g., http://localhost:8000),
+                      as endpoints like /v1/agents/register are appended internally.
+        """
+        self.base_url = base_url
+        # Use httpx.AsyncClient for async requests
+        self._client = httpx.AsyncClient(base_url=self.base_url, timeout=30.0)
+
+    async def _make_request(self, method: str, endpoint: str, **kwargs) -> Dict[str, Any]:
+        """Helper method to make async requests to the AgentKit API and handle common errors."""
+        # endpoint should be relative path like "/v1/agents/register"
+        try:
+            response = await self._client.request(method, endpoint, **kwargs)
+            response.raise_for_status() # Raise HTTPStatusError for bad responses (4xx or 5xx)
+            return response.json()
+        except httpx.HTTPStatusError as e: # Catch HTTPStatusError first
+            # Handle HTTP errors (4xx, 5xx)
+            status_code = e.response.status_code
+            error_data = None # Initialize error_data
+            try:
+                # Try to get error details from response body
+                error_data = e.response.json()
+                detail = error_data.get("detail", str(e))
+            except httpx.DecodingError: # Use httpx specific decoding error
+                detail = str(e) # Use the base exception string if JSON fails
+            raise AgentKitError(f"AgentKit API error (HTTP {status_code}): {detail}", status_code=status_code, response_data=error_data) from e
+        except httpx.RequestError as e: # Catch other network errors last (ConnectError, Timeout, etc.)
+            # Handle network errors, timeouts, etc.
+            raise AgentKitError(f"Network error communicating with AgentKit API: {e}") from e
+        except httpx.DecodingError as e: # Handle JSON decoding errors specifically if needed
+             raise AgentKitError(f"Failed to decode JSON response from AgentKit API: {e}") from e
+
+    async def close(self):
+        """Closes the underlying httpx client."""
+        await self._client.aclose()
+
+    async def register_agent(
+        self,
+        agent_name: str,
+        capabilities: List[str],
+        version: str,
+        contact_endpoint: HttpUrl, # Use HttpUrl for validation hint
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """
+        Registers a new agent with the AgentKit service (asynchronously).
+
+        Args:
+            agent_name: Unique name for the agent.
+            capabilities: List of capabilities the agent possesses.
+            version: Version string for the agent.
+            contact_endpoint: URL endpoint where the agent can be reached by AgentKit.
+            metadata: Optional structured metadata (e.g., {"description": "...", "config": {...}}).
+
+        Returns:
+            The unique agent ID assigned by the service.
+
+        Raises:
+            AgentKitError: If registration fails due to API errors or network issues.
+        """
+        endpoint = "/v1/agents/register" # Relative endpoint path
+        payload = {
+            "agentName": agent_name,
+            "capabilities": capabilities,
+            "version": version,
+            "contactEndpoint": str(contact_endpoint), # Convert HttpUrl to string for JSON
+            "metadata": metadata
+        }
+        # Filter out None metadata before sending
+        if payload["metadata"] is None:
+            del payload["metadata"]
+
+        response_data = await self._make_request("POST", endpoint, json=payload)
+
+        # Check application-level success status from ApiResponse model
+        if response_data.get("status") == "success" and "data" in response_data and "agentId" in response_data["data"]:
+            return response_data["data"]["agentId"]
+        else:
+            # If API returned 2xx but status is not success or data format is wrong
+            message = response_data.get("message", "Registration failed with unexpected response format.")
+            raise AgentKitError(message, response_data=response_data)
+
+    async def send_message(
+        self,
+        target_agent_id: str,
+        sender_id: str,
+        message_type: str,
+        payload: Dict[str, Any],
+        session_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Sends a message via the AgentKit service (asynchronously).
+        If message_type is 'tool_invocation', AgentKit executes the tool.
+        Otherwise, AgentKit dispatches the message to the target_agent_id's contactEndpoint.
+
+        Args:
+            target_agent_id: The ID of the agent to send the message to (for dispatch)
+                             or any valid agent ID if invoking a tool.
+            sender_id: The ID of the agent sending the message.
+            message_type: Type of message (e.g., 'intent_query', 'data_response', 'tool_invocation').
+            payload: The actual content/data of the message. For 'tool_invocation',
+                     this must include 'tool_name' and 'arguments'.
+            session_context: Optional session context (e.g., {"sessionId": "..."}).
+
+        Returns:
+            The data part of the successful API response. For tool invocations, this
+            contains the tool's results. For dispatched messages, this typically
+            contains an acknowledgement.
+
+        Raises:
+            AgentKitError: If sending the message fails due to API errors or network issues.
+        """
+        endpoint = f"/v1/agents/{target_agent_id}/run" # Relative endpoint path
+        message_data = {
+            "senderId": sender_id,
+            "messageType": message_type,
+            "payload": payload,
+            "sessionContext": session_context
+        }
+        # Filter out None context before sending
+        if message_data["sessionContext"] is None:
+            del message_data["sessionContext"]
+
+        response_data = await self._make_request("POST", endpoint, json=message_data)
+
+        # Check application-level success status
+        if response_data.get("status") == "success":
+            # Return the 'data' part of the response, which might contain
+            # results from tool execution or acknowledgement data.
+            return response_data.get("data", {})
+        else:
+            # Handle application-level errors (e.g., tool execution failure reported by API)
+            message = response_data.get("message", "Sending message failed with unexpected response format.")
+            error_code = response_data.get("error_code")
+            # Include error code in exception if available
+            full_message = f"{message} (Code: {error_code})" if error_code else message
+            raise AgentKitError(full_message, response_data=response_data)
+
+    async def report_state_to_opscore(
+        self,
+        agent_id: str,
+        state: str,
+        details: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """
+        (Optional) Reports the agent's current state directly to an Ops-Core service.
+
+        This method is intended for agents designed to integrate with Ops-Core.
+        It requires OPSCORE_API_URL and OPSCORE_API_KEY environment variables to be set.
+        It makes a direct HTTP call to the Ops-Core API, bypassing the AgentKit API.
+
+        Args:
+            agent_id: The ID of the agent reporting its state.
+            state: The current state (e.g., "idle", "active", "error").
+            details: Optional dictionary with additional context (e.g., error message).
+
+        Raises:
+            AgentKitError: If reporting state fails due to configuration issues,
+                           API errors from Ops-Core, or network problems.
+        """
+        opscore_url = os.getenv("OPSCORE_API_URL")
+        opscore_api_key = os.getenv("OPSCORE_API_KEY")
+
+        if not opscore_url:
+            logger.error("OPSCORE_API_URL environment variable not set. Cannot report state.")
+            raise AgentKitError("Configuration error: OPSCORE_API_URL not set.")
+        if not opscore_api_key:
+            logger.error("OPSCORE_API_KEY environment variable not set. Cannot report state.")
+            raise AgentKitError("Configuration error: OPSCORE_API_KEY not set.")
+
+
+        opscore_endpoint = f"/v1/opscore/agent/{agent_id}/state"
+        # Construct absolute URL for the Ops-Core endpoint
+        full_url = urljoin(opscore_url, opscore_endpoint)
+
+        payload = {
+            "agentId": agent_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "state": state,
+            "details": details if details is not None else {} # Ensure details is always a dict
+        }
+
+        headers = {
+            # Assuming Bearer token auth for Ops-Core, adjust if different
+            "Authorization": f"Bearer {opscore_api_key}",
+            "Content-Type": "application/json"
+        }
+
+        try:
+            # Use the client's underlying httpx instance to make the external call
+            async with httpx.AsyncClient(timeout=15.0) as opscore_http_client: # Use separate client for external call
+                 response = await opscore_http_client.post(full_url, json=payload, headers=headers)
+                 response.raise_for_status() # Raise HTTPStatusError for bad responses (4xx or 5xx)
+
+            logger.info(f"Successfully reported state '{state}' for agent {agent_id} to Ops-Core.")
+            # Optionally return response data if Ops-Core sends anything meaningful back
+            # return response.json()
+            return None # Indicate success
+        except httpx.HTTPStatusError as e:
+            status_code = e.response.status_code
+            error_data = None
+            try:
+                error_data = e.response.json()
+                detail = error_data.get("detail", str(e))
+            except httpx.DecodingError:
+                detail = str(e)
+            logger.error(f"Failed to report state to Ops-Core (HTTP {status_code}): {detail}", exc_info=True)
+            raise AgentKitError(f"Ops-Core API error (HTTP {status_code}): {detail}", status_code=status_code, response_data=error_data) from e
+        except httpx.RequestError as e:
+            logger.error(f"Network error reporting state to Ops-Core: {e}", exc_info=True)
+            raise AgentKitError(f"Network error communicating with Ops-Core API: {e}") from e
+        except Exception as e: # Catch any other unexpected errors
+            logger.error(f"Unexpected error reporting state to Ops-Core: {e}", exc_info=True)
+            raise AgentKitError(f"Unexpected error: {e}") from e
+
+
+    # --- Other SDK methods to be added later ---
+    # async def list_agents(...)
+    # async def get_agent_info(...)
+
+################################################################################
+# --- END FILE: agentkit/sdk/client.py ---
+################################################################################
+
+
+################################################################################
+# --- START FILE: agentkit/core/models.py ---
+################################################################################
+
+from pydantic import BaseModel, Field, HttpUrl
+from typing import List, Dict, Any, Optional, Union
+from datetime import datetime, timezone # Import timezone
+import uuid
+
+# --- API Response Models ---
+
+class ApiResponse(BaseModel):
+    """Standard API response structure."""
+    status: str = Field(..., description="Status of the response ('success' or 'error')")
+    message: Optional[str] = Field(None, description="Optional message providing details about the response")
+    data: Optional[Any] = Field(None, description="Optional data payload")
+    error_code: Optional[str] = Field(None, description="Specific error code if status is 'error'")
+
+# --- Agent Registration Models ---
+
+class AgentMetadata(BaseModel):
+    """Custom metadata for an agent."""
+    description: Optional[str] = Field(None, description="Optional description of the agent")
+    config: Optional[Dict[str, Any]] = Field(None, description="Optional agent-specific configuration")
+    # Add other relevant metadata fields as needed
+
+class AgentRegistrationPayload(BaseModel):
+    """Payload for registering a new agent."""
+    agentName: str = Field(..., description="Unique name for the agent")
+    capabilities: List[str] = Field(default_factory=list, description="List of capabilities the agent possesses")
+    version: str = Field(..., description="Version string for the agent")
+    contactEndpoint: HttpUrl = Field(..., description="URL endpoint where the agent can be reached by AgentKit")
+    metadata: Optional[AgentMetadata] = Field(None, description="Optional structured metadata about the agent")
+
+class AgentInfo(BaseModel):
+    """Information stored about a registered agent."""
+    agentId: str = Field(default_factory=lambda: str(uuid.uuid4()), description="Unique identifier assigned to the agent")
+    agentName: str
+    capabilities: List[str]
+    version: str
+    contactEndpoint: HttpUrl
+    metadata: Optional[AgentMetadata] = None
+    registration_time: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+# --- Messaging Models ---
+
+class SessionContext(BaseModel):
+    """Contextual information for a message within a session."""
+    sessionId: Optional[str] = Field(None, description="Identifier for the ongoing session or conversation")
+    priorMessages: Optional[List[str]] = Field(default_factory=list, description="History of recent messages in the session (optional)")
+    # Add other relevant context fields
+
+class MessagePayload(BaseModel):
+    """Payload structure used within the AgentKit API for the /run endpoint."""
+    senderId: str = Field(..., description="Agent ID of the sender")
+    # receiverId is implicit in the endpoint path /agents/{agentId}/run
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Timestamp when the message was created by the sender")
+    messageType: str = Field(..., description="Type of message (e.g., 'intent_query', 'data_response', 'tool_invocation', 'error_notification')")
+    payload: Dict[str, Any] = Field(..., description="The actual content/data of the message. For 'tool_invocation', must contain 'tool_name' and 'arguments'.")
+    sessionContext: Optional[SessionContext] = Field(None, description="Optional session context")
+
+# --- Tool Integration Models ---
+
+class ToolDefinition(BaseModel):
+    """Information stored about an available tool."""
+    toolId: str = Field(default_factory=lambda: str(uuid.uuid4()), description="Unique identifier for the tool")
+    name: str = Field(..., description="Unique name used to invoke the tool (e.g., 'generic_llm_completion')")
+    description: Optional[str] = Field(None, description="Description of what the tool does")
+    interface_details: Dict[str, Any] = Field(..., description="Details on how to invoke the tool (e.g., parameters, authentication)")
+    # Example interface_details: {"type": "api", "endpoint": "...", "method": "POST", "params": [...]}
+    # Example interface_details: {"type": "python_function", "module": "...", "function": "..."}
+
+################################################################################
+# --- END FILE: agentkit/core/models.py ---
+################################################################################
+
+
+################################################################################
+# --- START FILE: examples/tool_user_agent.py ---
+################################################################################
+
+"""
+Example Agent: Tool User Agent
+
+This script demonstrates using the AgentKit SDK to:
+1. Register a simple agent.
+2. Send a message intended to invoke a registered tool (the mock_tool).
+"""
+
+import os
+import asyncio # Import asyncio
+from agentkit.sdk.client import AgentKitClient, AgentKitError
+# Removed unused model imports
+# from agentkit.core.models import AgentRegistrationPayload, MessagePayload
+from pydantic import HttpUrl # Import HttpUrl
+
+# Configuration - Adjust if your AgentKit API runs elsewhere
+AGENTKIT_API_URL = os.getenv("AGENTKIT_API_URL", "http://localhost:8000") # Point to base URL
+MOCK_TOOL_NAME = "mock_tool" # The name the mock tool is registered under in main.py
+
+async def run_tool_user_agent(): # Make function async
+    """Registers an agent and sends a message to invoke a tool."""
+    print(f"--- Running Tool User Agent Example ---")
+    print(f"Using AgentKit API at: {AGENTKIT_API_URL}")
+
+    client = AgentKitClient(base_url=AGENTKIT_API_URL)
+    agent_id = None
+
+    try:
+        # 1. Register the Agent
+        print("\nAttempting to register agent...")
+        agent_name = "ToolUserAgent"
+        capabilities = ["tool_user"]
+        version = "1.0.0"
+        # Use pydantic HttpUrl for validation before passing as string
+        contact_endpoint = HttpUrl("http://example.com/tool_user_contact") # Placeholder
+        metadata = {"example_type": "tool_user_agent"}
+
+        # Call register_agent with individual arguments (now async)
+        agent_id = await client.register_agent( # Use await
+            agent_name=agent_name,
+            capabilities=capabilities,
+            version=version,
+            contact_endpoint=contact_endpoint, # Pass HttpUrl directly
+            metadata=metadata
+        )
+        print(f"Agent registered successfully! Agent ID: {agent_id}")
+
+        # 2. Send Tool Invocation Message
+        print(f"\nAttempting to send 'tool_invocation' message from {agent_id}...")
+        message_type = "tool_invocation"
+        payload = {
+            "tool_name": MOCK_TOOL_NAME,
+            "arguments": {
+                "query": "What is the weather in London?",
+                "details": {"units": "celsius"}
+            } # Example arguments matching mock_tool.py expectation
+        }
+        context = {"trace_id": "tool-example-456"}
+
+        # Call send_message with individual arguments (now async)
+        # Note: SDK uses sender_id, target_agent_id, session_context
+        # For tool invocation, target_agent_id might be less relevant,
+        # but we send to self as per the original logic.
+        response = await client.send_message( # Use await
+            target_agent_id=agent_id,
+            sender_id=agent_id,
+            message_type=message_type,
+            payload=payload,
+            session_context=context
+        )
+        print(f"Tool invocation message sent successfully!")
+        # The SDK's send_message returns the 'data' part of the response
+        print(f"API Response Data: {response}")
+
+    except AgentKitError as e:
+        print(f"\nAn AgentKit API error occurred: {e}")
+        # Safely check for response_data which might contain more details
+        if e.response_data:
+            print(f"API Response Data: {e.response_data}")
+    except Exception as e:
+        print(f"\nAn unexpected error occurred: {e}")
+    finally:
+        await client.close() # Close async client
+        print("\n--- Tool User Agent Example Finished ---")
+
+if __name__ == "__main__":
+    asyncio.run(run_tool_user_agent()) # Use asyncio.run
+
+################################################################################
+# --- END FILE: examples/tool_user_agent.py ---
+################################################################################
+
+
+# --- END OF AGENTKIT LLM CONTEXT BUNDLE ---

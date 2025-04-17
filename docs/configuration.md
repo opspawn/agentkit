@@ -42,6 +42,12 @@ You can use the following template to create your `.env` file. Populate it with 
 # GEMINI_API_KEY=...
 # Add other provider keys as needed by litellm
 
+# --- Ops-Core Integration (Required for state reporting) ---
+# URL of the running Ops-Core API service
+OPSCORE_API_URL=http://localhost:8080 # Replace with actual Ops-Core URL if different
+# API Key for authenticating with the Ops-Core API
+OPSCORE_API_KEY=your_opscore_api_key_here
+
 # --- AgentKit API Service (Optional Overrides) ---
 # These typically do not need to be set, as defaults are handled
 # by the FastAPI application and Docker Compose.
@@ -51,6 +57,20 @@ You can use the following template to create your `.env` file. Populate it with 
 # --- Other configurations (if added in the future) ---
 # Example: DATABASE_URL=...
 ```
+
+### Specific Variable Details
+
+#### LLM Provider Keys
+-   **Purpose:** Authenticate with external LLM services (OpenAI, Anthropic, etc.).
+-   **Used By:** `GenericLLMTool` via `litellm`.
+-   **Context:** Required when running `examples/llm_agent_example.py` or live integration tests (`pytest -m live_llm`). Also required by the API service in Docker if agents invoke the LLM tool.
+
+#### Ops-Core Integration Variables
+-   `OPSCORE_API_URL`: The base URL for the Ops-Core API service.
+-   `OPSCORE_API_KEY`: The API key required to authenticate requests to the Ops-Core API.
+-   **Purpose:** Allow AgentKit agents (via the SDK) to report their state to the Ops-Core lifecycle management system.
+-   **Used By:** `AgentKitClient.report_state_to_opscore` method.
+-   **Context:** Required by any agent that needs to integrate with Ops-Core state tracking, particularly when running the planned `examples/opscore_aware_agent.py`.
 
 ### Usage Contexts
 

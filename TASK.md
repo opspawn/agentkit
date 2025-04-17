@@ -82,6 +82,8 @@ This TASK.md document provides a detailed, step-by-step checklist for developing
 - [ ] **Task B4:** Expand the Python SDK to support multi-language integrations and additional tool connectors.
 - [ ] **Task B5:** Optimize API performance and refine security validations based on production feedback.
 - [x] **Task B6:** Create Sequential Tool Use example (`examples/sequential_tool_agent.py`). Updated `examples/README.md`.
+- [x] **Task B7:** Enhance AgentKit for Ops-Core Integration Readiness (SDK method, config, example, tests).
+- [x] **Task B8:** Create LLM Assistance Docs (`docs/building_agents_with_llms.md`, `docs/agentkit_llm_context.txt`).
 
 ---
 
