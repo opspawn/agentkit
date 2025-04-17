@@ -19,14 +19,14 @@ This directory contains example scripts demonstrating how to use the AgentKit Py
 
 ### 1. `ping_agent.py`
 
-*   **Purpose:** A very simple agent that registers itself and listens for incoming messages on a specified endpoint. It simply prints received messages. This demonstrates basic agent registration and receiving messages.
+*   **Purpose:** A very simple example demonstrating agent registration and sending a message to itself (which, with the dispatch logic added, will now likely fail unless the agent runs a server at its dummy endpoint). **See `responder_agent.py` and `requester_agent.py` for a working inter-agent communication example.**
 *   **How to Run:**
     1.  Start the AgentKit API (see Prerequisites).
     2.  Run the agent script:
         ```bash
         python examples/ping_agent.py
         ```
-    3.  You can then send messages to this agent using the AgentKit CLI or SDK (targeting the agent ID printed by the script).
+    3.  The script sends a message to itself. The API will attempt to dispatch this message to the agent's registered `contactEndpoint`.
 
 ### 2. `tool_user_agent.py`
 
@@ -40,7 +40,7 @@ This directory contains example scripts demonstrating how to use the AgentKit Py
         ```bash
         python examples/tool_user_agent.py
         ```
-    3.  The script will register a dummy agent and then attempt to invoke the `mock_tool_echo` tool via the API.
+    3.  The script will register a dummy agent and then attempt to invoke the `mock_tool` tool via the API.
 
 ### 3. `llm_agent_example.py`
 
@@ -59,3 +59,26 @@ This directory contains example scripts demonstrating how to use the AgentKit Py
         python examples/llm_agent_example.py
         ```
     4.  The script registers a dummy agent and then calls the `generic_llm_completion` tool via the API, printing the LLM's response.
+
+### 4. `responder_agent.py`
+
+*   **Purpose:** An agent that registers with a real, accessible `contactEndpoint` and runs a simple Flask server to listen for messages dispatched by the AgentKit API. It acknowledges received messages.
+*   **How to Run:**
+    1.  Ensure the AgentKit API is running (Docker Compose recommended: `docker-compose up --build api`).
+    2.  Run the responder agent script in a separate terminal:
+        ```bash
+        python examples/responder_agent.py
+        ```
+    3.  This agent will register itself and then block while the Flask server runs, waiting for incoming messages on port 9001 (by default). Keep this terminal open.
+
+### 5. `requester_agent.py`
+
+*   **Purpose:** An agent that registers itself, looks up the `ResponderAgent` by name, and sends it a message via the AgentKit API's dispatch mechanism. Demonstrates basic agent-to-agent communication.
+*   **How to Run:**
+    1.  Ensure the AgentKit API is running (`docker-compose up --build api`).
+    2.  Ensure the `responder_agent.py` script is running in another terminal.
+    3.  Run the requester agent script:
+        ```bash
+        python examples/requester_agent.py
+        ```
+    4.  The script will register itself, find the ResponderAgent's ID, send a message, and print the response received from the API (which includes the acknowledgement from the ResponderAgent's Flask server).

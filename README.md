@@ -1,6 +1,6 @@
 # AgentKit Python Module (Opspawn)
 
-[![CI Status](https://github.com/YOUR_ORG/YOUR_REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_ORG/YOUR_REPO/actions/workflows/ci.yml) <!-- Placeholder - Update with actual repo URL -->
+<!-- [![CI Status](https://github.com/YOUR_ORG/YOUR_REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_ORG/YOUR_REPO/actions/workflows/ci.yml) --> <!-- Placeholder CI Badge -->
 
 Core Python module for the Opspawn AgentKit, enabling rapid prototyping and building of autonomous AI agents.
 
@@ -9,7 +9,7 @@ Core Python module for the Opspawn AgentKit, enabling rapid prototyping and buil
 AgentKit provides a foundational framework for developing AI agents in Python. It includes modules and APIs for:
 
 *   **Agent Registration:** Registering agents with the system and managing their metadata.
-*   **Messaging:** Sending structured messages between agents or external systems via a central API.
+*   **Messaging:** Sending structured messages via a central API. The API handles internal tool invocations and dispatches other message types to the target agent's registered `contactEndpoint`.
 *   **Tool Integration:** Allowing agents to invoke registered tools (external APIs or internal functions).
 
 This module is designed with a local-first approach for ease of development and testing, using FastAPI for the core API and Pydantic for data validation. Core functionality has been validated through unit, integration, load, and user acceptance testing.
@@ -24,6 +24,7 @@ This module is designed with a local-first approach for ease of development and 
 *   Extensible tool integration interface (supports external HTTP tools).
 *   Containerized deployment using Docker.
 *   Example agents demonstrating core SDK usage.
+*   Generic LLM tool integration using `litellm` (requires API key configuration).
 
 ## Getting Started
 
@@ -37,8 +38,9 @@ This module is designed with a local-first approach for ease of development and 
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/YOUR_ORG/YOUR_REPO.git # Placeholder - Update URL
-    cd YOUR_REPO
+    # git clone https://github.com/YOUR_ORG/YOUR_REPO.git # Placeholder Repo URL
+    # cd YOUR_REPO
+    echo "Assuming repository is already cloned."
     ```
 
 2.  **Create and activate a virtual environment:**
@@ -52,6 +54,12 @@ This module is designed with a local-first approach for ease of development and 
     ```bash
     pip install -r requirements.txt
     ```
+
+### Configuration (.env)
+
+Some features, particularly the `GenericLLMTool` and related examples/tests, require API keys or other secrets. These should be configured using a `.env` file in the project root.
+
+**See the [Configuration Guide](docs/configuration.md) for details on setting up your `.env` file.**
 
 ### Running Locally (Development Server)
 
@@ -112,9 +120,26 @@ try:
         message_type="tool_invocation",
         payload={
             "tool_name": "mock_tool", # Use the registered mock tool
+            # Other tools like "GenericLLMTool" are also available
+            # but may require API keys configured in a .env file.
+            # See docs/configuration.md
             "arguments": {"query": "Test query from SDK"}
         },
         session_context={"example_session": "sdk_run_1"}
+    )
+    print(f"Tool invocation response: {response_data}")
+
+    # Send a message to be dispatched to another agent's endpoint
+    # (Requires the target agent to be running and listening on its contactEndpoint)
+    # target_agent_id = "some_other_registered_agent_id"
+    # response_data = client.send_message(
+    #     target_agent_id=target_agent_id,
+    #     sender_id=agent_id, # Send from the agent we just registered
+    #     message_type="custom_request",
+    #     payload={"request_details": "Please process this task."}
+    # )
+    # print(f"Dispatch message response: {response_data}")
+
     )
     print(f"Message sent. Response data: {response_data}")
 
@@ -150,13 +175,15 @@ python -m agentkit.cli.main register \
 python -m agentkit.cli.main send <TARGET_AGENT_ID> \
     --sender "cli_sender_01" \
     --type "intent_query" \
-    '{"query": "What is the current status?"}'
+    '{"query": "What is the current status?"}' # This will be dispatched if target agent has contactEndpoint
 
 # Example: Invoking the mock tool
 python -m agentkit.cli.main send <TARGET_AGENT_ID> \
     --sender "cli_tool_user_02" \
     --type "tool_invocation" \
     '{"tool_name": "mock_tool", "arguments": {"query": "Test query from CLI"}}'
+# (Note: Other tools like GenericLLMTool can also be invoked,
+# but may require API keys configured via .env. See docs/configuration.md)
 ```
 
 *(Run `python -m agentkit.cli.main --help` for more details)*
@@ -182,6 +209,13 @@ python examples/tool_user_agent.py
 ```
 This script registers an agent and sends a message to invoke the `mock_tool`.
 
+**Run the LLM Agent example:**
+```bash
+# IMPORTANT: Requires API keys in .env file! See docs/configuration.md
+python examples/llm_agent_example.py
+```
+This script registers an agent and uses the `GenericLLMTool` to make a call to an LLM provider configured via your `.env` file.
+
 ## API Documentation
 
 Interactive API documentation (Swagger UI) is available at the `/docs` endpoint when the server is running (e.g., `http://localhost:8000/docs`).
@@ -198,23 +232,29 @@ agentkit/          # Main package source code
 ├── messaging/     # Logic related to message handling
 ├── registration/  # Agent registration logic and storage
 ├── sdk/           # Python SDK client
-└── tools/         # Tool interface and registry
+└── tools/         # Tool interface and registry (incl. GenericLLMTool)
 tests/             # Unit and integration tests (pytest)
 ├── api/
 ├── cli/
-├── integration/
+├── integration/   # Includes live LLM tests and message dispatch tests
 ├── mock_services/ # Mock external services for testing
 ├── registration/
 ├── sdk/
 └── tools/
 docs/              # Project documentation (Markdown)
+├── configuration.md # Environment/config details
+└── TUTORIAL.md      # Step-by-step guide
 examples/          # Example agent implementations
+├── llm_agent_example.py # Example using GenericLLMTool
 ├── ping_agent.py
-└── tool_user_agent.py
+├── tool_user_agent.py
+└── README.md        # Explanations for examples
 memory-bank/       # Roo's Memory Bank for project context
 .github/workflows/ # CI/CD workflows (GitHub Actions)
 ├── ci.yml
 .coverage          # Test coverage report data
+.env               # Local environment variables (API Keys, etc. - DO NOT COMMIT)
+.gitignore         # Specifies intentionally untracked files (should include .env)
 AgentkitDevelopmentDoc.md # Original development requirements doc
 DEVELOPMENT_PLAN.md # Detailed development plan
 Dockerfile         # Container definition for API service
@@ -222,6 +262,7 @@ docker-compose.yml # Docker Compose configuration
 locustfile.py      # Locust load test definition
 main.py            # FastAPI application entry point
 PLANNING.md        # High-level project planning
+pytest.ini         # Pytest configuration (markers, asyncio)
 README.md          # This file
 requirements.txt   # Python dependencies
 TASK.md            # Task checklist

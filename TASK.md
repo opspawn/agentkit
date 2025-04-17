@@ -69,13 +69,14 @@ This TASK.md document provides a detailed, step-by-step checklist for developing
 - [x] **Task 5.1:** Update the Developer README with installation, configuration, and usage instructions specific to the Python module.
 - [x] **Task 5.2:** Generate API documentation using Swagger/OpenAPI. (Reviewed auto-generated schema)
 - [x] **Task 5.3:** Create sample projects and comprehensive tutorials showcasing the Python SDK and CLI usage. (Implemented GenericLLMTool, example, tutorial, unit tests, and live integration test).
-- [ ] **Task 5.4:** Document configuration details, environment variables, and any external dependencies.
-- [ ] **Task 5.5:** Final review and consolidation of all project documentation for final integration.
+- [x] **Task 5.4:** Document configuration details, environment variables, and any external dependencies. (Created `docs/configuration.md`)
+- [x] **Task 5.5:** Final review and consolidation of all project documentation for final integration. (Reviewed/updated README, docs, examples/README, Memory Bank)
 
 ---
 
 ## Backlog / Future Enhancements
-- [ ] **Task B1:** Implement asynchronous messaging support.
+- [~] **Task B1:** Implement messaging support (Synchronous dispatch to agent endpoints implemented; async support pending).
+  - [x] **Task B1.1:** Create Requester/Responder examples (`examples/requester_agent.py`, `examples/responder_agent.py`) demonstrating synchronous dispatch. Updated `examples/README.md`.
 - [ ] **Task B2:** Integrate persistent storage options by migrating from in-memory storage to a dedicated database.
 - [ ] **Task B3:** Develop additional debugging tools and a web-based log inspection dashboard.
 - [ ] **Task B4:** Expand the Python SDK to support multi-language integrations and additional tool connectors.
