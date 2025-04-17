@@ -82,3 +82,18 @@ This directory contains example scripts demonstrating how to use the AgentKit Py
         python examples/requester_agent.py
         ```
     4.  The script will register itself, find the ResponderAgent's ID, send a message, and print the response received from the API (which includes the acknowledgement from the ResponderAgent's Flask server).
+
+### 6. `sequential_tool_agent.py`
+
+*   **Purpose:** Demonstrates an agent calling one tool (`mock_tool`), processing its result, and then using that result to call another tool (`generic_llm_completion`). Showcases basic workflow logic within an agent.
+*   **Prerequisites:**
+    *   AgentKit API running *with the mock tool service* (`docker-compose up --build api mock_tool`).
+    *   A `.env` file in the project root containing the necessary API key(s) for your chosen LLM provider (e.g., `OPENAI_API_KEY=sk-...`).
+*   **How to Run:**
+    1.  Ensure the AgentKit API and mock tool service are running via Docker Compose.
+    2.  Ensure your `.env` file is configured for the desired LLM model (default is `gpt-3.5-turbo`).
+    3.  Run the script:
+        ```bash
+        python examples/sequential_tool_agent.py
+        ```
+    4.  The script registers itself, calls `mock_tool`, uses the result to create a prompt, calls `generic_llm_completion`, and prints the final LLM response.

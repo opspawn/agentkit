@@ -81,6 +81,7 @@ This TASK.md document provides a detailed, step-by-step checklist for developing
 - [ ] **Task B3:** Develop additional debugging tools and a web-based log inspection dashboard.
 - [ ] **Task B4:** Expand the Python SDK to support multi-language integrations and additional tool connectors.
 - [ ] **Task B5:** Optimize API performance and refine security validations based on production feedback.
+- [x] **Task B6:** Create Sequential Tool Use example (`examples/sequential_tool_agent.py`). Updated `examples/README.md`.
 
 ---
 

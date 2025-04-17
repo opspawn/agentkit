@@ -1,4 +1,4 @@
-# Active Context: AgentKit Python Module (Post-Task B1.1)
+# Active Context: AgentKit Python Module (Post-Task B6)
 
 ## 1. Current Work Focus
 
@@ -32,11 +32,12 @@
     -   Updated `README.md` documentation.
     -   Updated `TASK.md`.
 -   **Task B1.1 Complete:** Created `examples/responder_agent.py` and `examples/requester_agent.py` to demonstrate synchronous dispatch. Updated `examples/README.md` and `TASK.md`.
+-   **Task B6 Complete:** Created `examples/sequential_tool_agent.py` demonstrating calling `mock_tool` then `generic_llm_completion`. Updated `examples/README.md` and `TASK.md`.
 
 ## 3. Next Steps (Immediate)
 
 -   **Next Steps:** Consider remaining backlog tasks (B1-Async, B2-B5).
--   **Update `progress.md`:** Reflect the completion of Task B1.1.
+-   **Update `progress.md`:** Reflect the completion of Task B6.
 
 ## 4. Active Decisions & Considerations
 
