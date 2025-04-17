@@ -1,41 +1,45 @@
-# Active Context: AgentKit Python Module (Post-Task 5.2, Pre-Task 5.3 Impl)
+# Active Context: AgentKit Python Module (Post-Task 5.3, Pre-Task 5.4)
 
 ## 1. Current Work Focus
 
--   **Phase 5: Documentation & Finalization:** Preparing to implement Task 5.3.
+-   **Phase 5: Documentation & Finalization:** Preparing to implement **Task 5.4: Document configuration details, environment variables, and any external dependencies.**
 
 ## 2. Recent Changes
 
--   **Task 4.1 - 4.5 Complete:** All testing and validation tasks are complete.
--   **Task 5.1 Complete:** Updated the main `README.md`.
--   **Task 5.2 Complete:** Reviewed the auto-generated OpenAPI documentation.
--   **Task 5.3 Planning Complete:** Researched options (`litellm`, `pydantic-ai`) for creating a generic LLM tool connector. Decided to use `litellm` due to its focus on unified API calling. Developed a detailed plan for Task 5.3 involving:
-    -   Adding `litellm` dependency.
-    -   Implementing `GenericLLMTool` using `litellm`.
-    -   Registering the tool.
-    -   Updating Docker Compose for `.env` access.
-    -   Creating a new `llm_agent_example.py`.
-    -   Updating `examples/README.md` and creating `TUTORIAL.md`.
--   **Tracking Update:** Updated `TASK.md` to mark Tasks 5.1 and 5.2 complete.
+-   **Task 5.1 & 5.2 Complete:** `README.md` updated, API docs reviewed.
+-   **Task 5.3 Complete:**
+    -   Added `litellm` and `python-dotenv` dependencies.
+    -   Implemented `GenericLLMTool` using `litellm`.
+    -   Registered the tool.
+    -   Updated Docker Compose for `.env` access.
+    -   Created `llm_agent_example.py`.
+    -   Created `examples/README.md`.
+    -   Created `docs/TUTORIAL.md`.
+    -   Added unit tests for `GenericLLMTool` (`tests/tools/test_llm_tool.py`).
+    -   Added live integration test (`tests/integration/test_llm_tool_live.py`) marked with `live_llm`.
+    -   Created `.env` file for live test API key.
+    -   Created `pytest.ini` to configure markers and asyncio mode, resolving test warnings.
+    -   Verified both unit and live tests pass.
+-   **Tracking Update:** Updated `TASK.md` to mark Task 5.3 complete.
 
 ## 3. Next Steps (Immediate)
 
--   **Begin Implementation of Task 5.3:** Start executing the plan for the generic LLM tool using `litellm`. First step is adding dependencies.
--   **Update `progress.md`:** Reflect the completion of Tasks 5.1, 5.2 and the planning for 5.3.
+-   **Begin Implementation of Task 5.4:** Start documenting configuration details, focusing on environment variables (like the LLM API keys in `.env`), Docker setup, and any other relevant settings.
+-   **Update `progress.md`:** Reflect the completion of Task 5.3.
 
 ## 4. Active Decisions & Considerations
 
--   **LLM Tool Implementation Details:** Specific arguments and return structure for `GenericLLMTool`.
--   **Environment Setup:** User needs to provide `.env` file with API keys for the chosen LLM provider(s) to test the example.
+-   Determine the best location and format for configuration documentation (e.g., a dedicated `docs/configuration.md` file as suggested in `DEVELOPMENT_PLAN.md`, sections in `README.md`, or both).
+-   Identify all relevant environment variables used by the API service and examples.
 
 ## 5. Important Patterns & Preferences
 
--   **Model Agnosticism:** Aim for the `GenericLLMTool` to be as provider-neutral as possible, leveraging `litellm`.
--   **Clear Documentation:** Ensure the setup (`.env`) and usage of the new LLM tool and example are clearly documented.
--   **Maintainability:** Keep the tool implementation clean and testable (though adding specific tests for this tool might be a separate task).
+-   **Clear Documentation:** Ensure configuration documentation is clear, accurate, and easy for developers to follow.
+-   **Separation of Concerns:** Keep configuration details separate from core code logic.
+-   **Security:** Emphasize secure handling of sensitive information like API keys (using `.env` and `.gitignore`).
 
 ## 6. Learnings & Insights
 
--   `litellm` appears well-suited for creating a unified LLM calling interface within AgentKit tools.
--   `pydantic-ai` is more of a full agent framework, less suitable for use *as a tool* within AgentKit.
--   Integrating real LLMs requires careful handling of API keys and clear instructions for users.
+-   Adding integration tests, even simple ones, provides valuable confirmation of end-to-end functionality.
+-   Proper pytest configuration (markers, asyncio settings) improves test suite clarity and maintainability.
+-   Handling external dependencies like LLMs requires clear documentation for user setup (e.g., `.env` files).

@@ -68,7 +68,7 @@ This TASK.md document provides a detailed, step-by-step checklist for developing
 
 - [x] **Task 5.1:** Update the Developer README with installation, configuration, and usage instructions specific to the Python module.
 - [x] **Task 5.2:** Generate API documentation using Swagger/OpenAPI. (Reviewed auto-generated schema)
-- [ ] **Task 5.3:** Create sample projects and comprehensive tutorials showcasing the Python SDK and CLI usage.
+- [x] **Task 5.3:** Create sample projects and comprehensive tutorials showcasing the Python SDK and CLI usage. (Implemented GenericLLMTool, example, tutorial, unit tests, and live integration test).
 - [ ] **Task 5.4:** Document configuration details, environment variables, and any external dependencies.
 - [ ] **Task 5.5:** Final review and consolidation of all project documentation for final integration.
 

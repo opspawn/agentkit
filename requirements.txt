@@ -11,3 +11,6 @@ typer[all] # For building the CLI tool
 httpx # Required by FastAPI TestClient
 flask # For mock tool service
 locust # For load testing
+litellm
+python-dotenv
+pytest-asyncio # For running async tests with pytest

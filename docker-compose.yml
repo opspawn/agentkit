@@ -12,6 +12,7 @@ services:
       # Add any necessary environment variables here
       # EXAMPLE_VAR: example_value
       PYTHONUNBUFFERED: 1 # Ensures logs are shown in real-time
+    env_file: .env # Load environment variables from .env file
     depends_on:
       - mock_tool # Start mock_tool before api (doesn't guarantee readiness)
 

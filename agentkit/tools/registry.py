@@ -159,3 +159,14 @@ tool_registry = ToolRegistry()
 # Example: How a tool might be registered at startup
 # from some_module import MyToolClass
 # tool_registry.register_tool(MyToolClass)
+
+# --- Register AgentKit Built-in Tools ---
+from agentkit.tools.llm_tool import GenericLLMTool
+
+# Register the Generic LLM Tool on import
+try:
+    tool_registry.register_tool(GenericLLMTool)
+except ValueError as e:
+    # Handle potential registration errors (e.g., duplicate name) during import
+    # In a real application, you might want more robust error handling or logging
+    print(f"Warning: Could not register GenericLLMTool: {e}")
