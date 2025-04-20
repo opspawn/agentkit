@@ -54,6 +54,10 @@ class MessagePayload(BaseModel):
     messageType: str = Field(..., description="Type of message (e.g., 'intent_query', 'data_response', 'tool_invocation', 'error_notification')")
     payload: Dict[str, Any] = Field(..., description="The actual content/data of the message")
     sessionContext: Optional[SessionContext] = Field(None, description="Optional session context")
+    # --- Ops-Core Specific Fields (Optional) ---
+    task_name: Optional[str] = Field(None, description="Specific task name provided by the caller (e.g., Ops-Core)")
+    opscore_session_id: Optional[str] = Field(None, description="Correlation ID for the Ops-Core session, if provided")
+    opscore_task_id: Optional[str] = Field(None, description="Correlation ID for the specific Ops-Core task, if provided")
 
 # --- Tool Integration Models ---
 

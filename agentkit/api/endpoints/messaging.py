@@ -1,5 +1,5 @@
 import httpx # Import httpx for async HTTP calls
-from fastapi import APIRouter, HTTPException, status, Body, Path
+from fastapi import APIRouter, HTTPException, status, Body, Path, BackgroundTasks # Add BackgroundTasks
 from pydantic import HttpUrl # For endpoint validation
 from agentkit.core.models import MessagePayload, ApiResponse, AgentInfo
 from agentkit.registration.storage import agent_storage # To get agent details
@@ -21,18 +21,28 @@ EXTERNAL_CALL_TIMEOUT = 15.0 # seconds
 
 @router.post(
     "/agents/{agent_id}/run",
-    response_model=ApiResponse,
-    status_code=status.HTTP_200_OK,
-    summary="Send a message or command to an agent",
-    description="Sends a structured message payload to the specified agent for processing. Handles internal tool invocations and dispatches other messages to the agent's contact endpoint.",
+    response_model=ApiResponse, # Response model remains ApiResponse for structure
+    status_code=status.HTTP_202_ACCEPTED, # Change status code to 202 Accepted
+    summary="Accept a task for an agent",
+    description="Accepts a task payload for the specified agent. If the agent has a contact endpoint, the task is dispatched asynchronously in the background. Tool invocations are handled synchronously before responding.",
     tags=["Messaging"]
 )
 async def run_agent(
-    agent_id: str = Path(..., description="The unique ID of the target agent"),
-    payload: MessagePayload = Body(...)
+    background_tasks: BackgroundTasks, # Dependency Injection (no default) - MUST COME FIRST
+    agent_id: str = Path(..., description="The unique ID of the target agent"), # Default from Path
+    payload: MessagePayload = Body(...) # Default from Body
 ) -> ApiResponse:
     """
-    Handles incoming messages/commands for a specific agent.
+    Accepts incoming tasks/messages for a specific agent.
+
+    1. Checks if the target agent is registered.
+    2. If messageType is 'tool_invocation':
+        - Attempts to execute the tool synchronously (external HTTP or local class).
+        - Returns the tool execution result with 200 OK (overrides 202).
+    3. If messageType is anything else:
+        - Retrieves the target agent's contact_endpoint.
+        - If an endpoint exists, schedules asynchronous dispatch via background task.
+        - Returns 202 Accepted immediately.
 
     1. Checks if the target agent is registered.
     2. If messageType is 'tool_invocation':
@@ -77,6 +87,8 @@ async def run_agent(
                     # Format external tool response
                     if isinstance(tool_result, dict) and tool_result.get("status") == "error":
                          logger.error(f"External tool '{tool_name}' reported execution error: {tool_result.get('error_message')}")
+                         # Tool errors should still return 200 OK with error status in payload
+                         # Overriding the default 202 for synchronous tool calls
                          return ApiResponse(
                              status="error",
                              message=f"External tool '{tool_name}' execution failed: {tool_result.get('error_message', 'Unknown tool error')}",
@@ -85,6 +97,8 @@ async def run_agent(
                          )
                     else:
                          logger.info(f"External tool '{tool_name}' executed successfully.")
+                         # Tool success should return 200 OK
+                         # Overriding the default 202 for synchronous tool calls
                          return ApiResponse(
                              status="success",
                              message=f"External tool '{tool_name}' executed successfully.",
@@ -128,6 +142,8 @@ async def run_agent(
 
                 if isinstance(tool_result, dict) and tool_result.get("status") == "error":
                      logger.error(f"Local tool '{tool_name}' reported execution error: {tool_result.get('error_message')}")
+                     # Tool errors should still return 200 OK with error status in payload
+                     # Overriding the default 202 for synchronous tool calls
                      return ApiResponse(
                          status="error",
                          message=f"Local tool '{tool_name}' execution failed: {tool_result.get('error_message', 'Unknown tool error')}",
@@ -136,6 +152,8 @@ async def run_agent(
                      )
                 else:
                      logger.info(f"Local tool '{tool_name}' executed successfully.")
+                     # Tool success should return 200 OK
+                     # Overriding the default 202 for synchronous tool calls
                      return ApiResponse(
                          status="success",
                          message=f"Local tool '{tool_name}' executed successfully.",
@@ -173,55 +191,56 @@ async def run_agent(
                 detail=f"Agent '{agent_id}' has an invalid registered contact endpoint URL."
             )
 
-        # Prepare payload to send (using the original MessagePayload model)
-        dispatch_payload = payload.model_dump(mode='json')
+        # Schedule the dispatch to the agent's endpoint as a background task
+        logger.info(f"Scheduling background dispatch to agent {agent_id} at {contact_endpoint_str}")
+        background_tasks.add_task(
+            dispatch_to_agent_endpoint,
+            agent_id=agent_id,
+            contact_endpoint=contact_endpoint_str, # Pass validated string URL
+            payload=payload
+        )
 
-        async with httpx.AsyncClient(timeout=EXTERNAL_CALL_TIMEOUT) as client:
-            try:
-                # Convert HttpUrl to string for httpx and logging
-                contact_url_str = str(contact_endpoint_str)
-                logger.info(f"Dispatching message to {contact_url_str} for agent {agent_id}")
-                response = await client.post(contact_url_str, json=dispatch_payload)
-                response.raise_for_status() # Raise HTTPStatusError for 4xx/5xx responses
+        # Return 202 Accepted immediately
+        return ApiResponse(
+            status="success",
+            message=f"Task accepted for agent {agent_id}. Dispatch scheduled.",
+            data={"agentId": agent_id, "dispatch_status": "scheduled"}
+        )
 
-                # Assume target agent responds with JSON containing its result/status
-                try:
-                    agent_response_data = response.json()
-                    logger.info(f"Successfully dispatched message to agent {agent_id}. Received response: {agent_response_data}")
-                    # Return success, including the data received from the target agent
-                    return ApiResponse(
-                        status="success",
-                        message=f"Message successfully dispatched to agent {agent_id}.",
-                        data=agent_response_data # Include response from target agent
-                    )
-                except Exception: # Broad exception for JSON decode issues
-                    logger.warning(f"Successfully dispatched message to agent {agent_id}, but response was not valid JSON: {response.text}")
-                    return ApiResponse(
-                        status="success",
-                        message=f"Message successfully dispatched to agent {agent_id}, but response from agent was not valid JSON.",
-                        data={"raw_response": response.text}
-                    )
 
-            except (httpx.TimeoutException, httpx.RemoteProtocolError) as timeout_err:
-                 # Catch both explicit timeouts and cases where the server disconnects unexpectedly
-                 error_message = f"Dispatch request to agent '{agent_id}' at {contact_url_str} timed out or connection failed unexpectedly: {timeout_err}"
-                 logger.error(error_message)
-                 raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=f"Dispatch request to agent '{agent_id}' timed out or failed.")
-            except httpx.ConnectError:
-                 logger.error(f"Could not connect to agent '{agent_id}' at {contact_endpoint_str}.")
-                 raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Could not connect to agent '{agent_id}' contact endpoint.")
-            except httpx.HTTPStatusError as e:
-                 error_detail = f"Agent '{agent_id}' endpoint returned error: Status {e.response.status_code}"
-                 try:
-                     error_data = e.response.json()
-                     error_detail += f" - Response: {error_data}"
-                 except Exception: # Broad exception for JSON decode issues
-                     error_detail += f" - Response: {e.response.text}"
-                 logger.error(error_detail)
-                 # Forward the status code from the target agent if possible
-                 raise HTTPException(status_code=e.response.status_code, detail=error_detail)
-            except Exception as e:
-                 logger.exception(f"An unexpected error occurred while dispatching message to agent '{agent_id}'.") # Log stack trace
-                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred while dispatching message to agent '{agent_id}': {str(e)}")
+async def dispatch_to_agent_endpoint(agent_id: str, contact_endpoint: str, payload: MessagePayload):
+    """
+    Background task to dispatch a message payload to the agent's contact endpoint.
+    Handles HTTP calls and logging.
+    """
+    dispatch_payload = payload.model_dump(mode='json')
+    logger.info(f"[Background Task] Dispatching message type '{payload.messageType}' to {contact_endpoint} for agent {agent_id}")
+
+    async with httpx.AsyncClient(timeout=EXTERNAL_CALL_TIMEOUT) as client:
+        try:
+            response = await client.post(contact_endpoint, json=dispatch_payload)
+            response.raise_for_status() # Raise HTTPStatusError for 4xx/5xx responses
+
+            # Log success, but don't process response body in background task
+            logger.info(f"[Background Task] Successfully dispatched message to agent {agent_id} at {contact_endpoint}. Status: {response.status_code}")
+            # Optionally log response snippet if needed for debugging:
+            # response_text_snippet = response.text[:100] + "..." if len(response.text) > 100 else response.text
+            # logger.debug(f"[Background Task] Agent {agent_id} response snippet: {response_text_snippet}")
+
+        except (httpx.TimeoutException, httpx.RemoteProtocolError) as timeout_err:
+             error_message = f"[Background Task] Dispatch request to agent '{agent_id}' at {contact_endpoint} timed out or connection failed unexpectedly: {timeout_err}"
+             logger.error(error_message)
+        except httpx.ConnectError:
+             logger.error(f"[Background Task] Could not connect to agent '{agent_id}' at {contact_endpoint}.")
+        except httpx.HTTPStatusError as e:
+             error_detail = f"[Background Task] Agent '{agent_id}' endpoint ({contact_endpoint}) returned error: Status {e.response.status_code}"
+             try:
+                 error_data = e.response.json()
+                 error_detail += f" - Response: {error_data}"
+             except Exception:
+                 error_detail += f" - Response: {e.response.text}"
+             logger.error(error_detail)
+        except Exception as e:
+             logger.exception(f"[Background Task] An unexpected error occurred while dispatching message to agent '{agent_id}' at {contact_endpoint}.")
 
 # Add other messaging-related endpoints if needed

@@ -1,5 +1,13 @@
 import pytest
+import os
+import json
+import time
+import hmac
+import hashlib
+from unittest.mock import patch, MagicMock, ANY # Import patch and MagicMock
+from fastapi import BackgroundTasks # Import BackgroundTasks
 from fastapi.testclient import TestClient
+from pytest_httpx import HTTPXMock # Import HTTPXMock
 from main import app # Import the FastAPI app instance from main.py
 from agentkit.registration.storage import agent_storage
 from agentkit.core.models import AgentRegistrationPayload, AgentInfo
@@ -119,6 +127,161 @@ def test_register_agent_duplicate_name_conflict(client: TestClient):
     assert len(agent_storage.list_agents()) == 1
     assert agent_storage.get_agent_by_name("DuplicateAPIName").version == "1.0"
 
-# Note: Testing the 500 Internal Server Error case typically requires mocking
-# the storage layer to raise an unexpected Exception, which adds complexity.
-# We'll skip that specific test for now but acknowledge its importance in robust testing.
+# --- Webhook Notification Tests ---
+
+# Common payload for webhook tests
+WEBHOOK_TEST_PAYLOAD = {
+    "agentName": "WebhookTestAgent",
+    "capabilities": ["webhook_test"],
+    "version": "1.0.0",
+    "contactEndpoint": "http://webhook.test:8000",
+}
+WEBHOOK_URL = "http://mock-opscore.test/webhook"
+WEBHOOK_SECRET = "test-secret"
+
+@pytest.mark.asyncio # Mark test as async if the tested function is async
+async def test_register_agent_triggers_webhook_success(
+    client: TestClient, httpx_mock: HTTPXMock, monkeypatch, mocker # Add mocks
+):
+    """Test that successful registration triggers the Ops-Core webhook via background task."""
+    monkeypatch.setenv("OPSCORE_WEBHOOK_URL", WEBHOOK_URL)
+    monkeypatch.setenv("OPSCORE_WEBHOOK_SECRET", WEBHOOK_SECRET)
+
+    # Mock BackgroundTasks.add_task
+    mock_add_task = mocker.patch("fastapi.BackgroundTasks.add_task")
+
+    # Mock the webhook endpoint
+    httpx_mock.add_response(url=WEBHOOK_URL, method="POST", status_code=200)
+
+    # Mock time.time for predictable signature
+    fixed_time = int(time.time())
+    mocker.patch("time.time", return_value=fixed_time)
+
+    # Perform registration
+    response = client.post("/v1/agents/register", json=WEBHOOK_TEST_PAYLOAD)
+    assert response.status_code == 201
+    agent_id = response.json()["data"]["agentId"]
+
+    # Verify BackgroundTasks.add_task was called correctly
+    mock_add_task.assert_called_once()
+    # Check the function passed to add_task (it's the webhook function)
+    assert mock_add_task.call_args[0][0].__name__ == "notify_opscore_webhook"
+    # Check the agent_info argument passed to the webhook function
+    agent_info_arg = mock_add_task.call_args[0][1]
+    assert isinstance(agent_info_arg, AgentInfo)
+    assert agent_info_arg.agentId == agent_id
+    assert agent_info_arg.agentName == WEBHOOK_TEST_PAYLOAD["agentName"]
+
+    # --- Now, let's simulate the background task execution to test the webhook call itself ---
+    # Get the actual function and arguments passed to add_task
+    webhook_func = mock_add_task.call_args[0][0]
+    webhook_args = mock_add_task.call_args[0][1:]
+    webhook_kwargs = mock_add_task.call_args[1]
+
+    # Execute the background task function directly (since it's hard to test background tasks otherwise)
+    await webhook_func(*webhook_args, **webhook_kwargs)
+
+    # Verify the HTTP request made by the webhook function
+    requests = httpx_mock.get_requests(url=WEBHOOK_URL, method="POST")
+    assert len(requests) == 1
+    request = requests[0]
+
+    # Verify headers
+    assert request.headers["content-type"] == "application/json"
+    assert request.headers["x-agentkit-timestamp"] == str(fixed_time)
+
+    # Verify signature
+    # Construct the expected payload *using the agent_info object passed to the task*
+    # This ensures consistency with how the actual webhook function builds it.
+    agent_info_for_payload = agent_info_arg # From line 170
+    expected_agent_details = {
+        "agentId": agent_info_for_payload.agentId,
+        "agentName": agent_info_for_payload.agentName,
+        "version": agent_info_for_payload.version,
+        "capabilities": agent_info_for_payload.capabilities,
+        "contactEndpoint": str(agent_info_for_payload.contactEndpoint), # Use string form
+        "metadata": agent_info_for_payload.metadata or {} # Handle potential None
+    }
+    expected_payload_dict = {
+        "event_type": "REGISTER",
+        "agent_details": expected_agent_details
+    }
+    payload_bytes = json.dumps(expected_payload_dict, separators=(',', ':')).encode('utf-8')
+    # Construct signature string consistently with the main code
+    sig_string = str(fixed_time).encode('utf-8') + b'.' + payload_bytes
+    expected_signature = hmac.new(WEBHOOK_SECRET.encode('utf-8'), sig_string, hashlib.sha256).hexdigest()
+    assert request.headers["x-agentkit-signature"] == expected_signature
+
+    # Verify payload
+    assert json.loads(request.content) == expected_payload_dict
+
+
+@pytest.mark.asyncio
+async def test_register_agent_webhook_skipped_if_not_configured(
+    client: TestClient, httpx_mock: HTTPXMock, monkeypatch, mocker
+):
+    """Test that the webhook is not called if URL or secret is missing."""
+    # Ensure env vars are NOT set
+    monkeypatch.delenv("OPSCORE_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("OPSCORE_WEBHOOK_SECRET", raising=False)
+
+    mock_add_task = mocker.patch("fastapi.BackgroundTasks.add_task")
+    mock_logger_info = mocker.patch("agentkit.api.endpoints.registration.logger.info") # Mock logger
+
+    # Perform registration
+    response = client.post("/v1/agents/register", json=WEBHOOK_TEST_PAYLOAD)
+    assert response.status_code == 201
+
+    # Verify add_task was still called
+    mock_add_task.assert_called_once()
+
+    # Simulate background task execution
+    webhook_func = mock_add_task.call_args[0][0]
+    webhook_args = mock_add_task.call_args[0][1:]
+    webhook_kwargs = mock_add_task.call_args[1]
+    await webhook_func(*webhook_args, **webhook_kwargs)
+
+    # Verify NO HTTP request was made
+    requests = httpx_mock.get_requests(url=WEBHOOK_URL, method="POST")
+    assert len(requests) == 0
+    # Verify log message indicating skip
+    mock_logger_info.assert_any_call("Ops-Core webhook URL or secret not configured. Skipping notification.")
+
+
+@pytest.mark.asyncio
+async def test_register_agent_webhook_handles_http_error(
+    client: TestClient, httpx_mock: HTTPXMock, monkeypatch, mocker
+):
+    """Test that webhook HTTP errors are logged but registration succeeds."""
+    monkeypatch.setenv("OPSCORE_WEBHOOK_URL", WEBHOOK_URL)
+    monkeypatch.setenv("OPSCORE_WEBHOOK_SECRET", WEBHOOK_SECRET)
+
+    mock_add_task = mocker.patch("fastapi.BackgroundTasks.add_task")
+    mock_logger_error = mocker.patch("agentkit.api.endpoints.registration.logger.error") # Mock logger
+
+    # Mock the webhook endpoint to return an error
+    httpx_mock.add_response(url=WEBHOOK_URL, method="POST", status_code=500, text="Internal Server Error")
+
+    # Perform registration - should still succeed
+    response = client.post("/v1/agents/register", json=WEBHOOK_TEST_PAYLOAD)
+    assert response.status_code == 201
+
+    # Simulate background task execution
+    webhook_func = mock_add_task.call_args[0][0]
+    webhook_args = mock_add_task.call_args[0][1:]
+    webhook_kwargs = mock_add_task.call_args[1]
+    await webhook_func(*webhook_args, **webhook_kwargs)
+
+    # Verify HTTP request was made
+    requests = httpx_mock.get_requests(url=WEBHOOK_URL, method="POST")
+    assert len(requests) == 1
+
+    # Verify error was logged
+    mock_logger_error.assert_called_once()
+    assert "Status error 500" in mock_logger_error.call_args[0][0]
+
+
+# Note: Testing the 500 Internal Server Error case for registration itself
+# typically requires mocking the storage layer to raise an unexpected Exception,
+# which adds complexity. We'll skip that specific test for now but acknowledge
+# its importance in robust testing.

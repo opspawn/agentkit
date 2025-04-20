@@ -26,6 +26,10 @@ This module is designed with a local-first approach for ease of development and 
 *   Example agents demonstrating core SDK usage.
 *   Generic LLM tool integration using `litellm` (requires API key configuration).
 *   SDK support for reporting agent state to Ops-Core (requires Ops-Core configuration).
+*   **Ops-Core Integration:**
+    *   Webhook notifications to Ops-Core on agent registration (configurable).
+    *   Asynchronous dispatch of non-tool messages via the `/run` endpoint (returns `202 Accepted`).
+    *   See [Ops-Core Integration Guide](docs/opscore_integration.md) for details.
 
 ## Getting Started
 

@@ -84,6 +84,7 @@ This TASK.md document provides a detailed, step-by-step checklist for developing
 - [x] **Task B6:** Create Sequential Tool Use example (`examples/sequential_tool_agent.py`). Updated `examples/README.md`.
 - [x] **Task B7:** Enhance AgentKit for Ops-Core Integration Readiness (SDK method, config, example, tests).
 - [x] **Task B8:** Create LLM Assistance Docs (`docs/building_agents_with_llms.md`, `docs/agentkit_llm_context.txt`).
+- [x] **Task B9 (2025-04-20):** Implement AgentKit Service Features for Ops-Core Integration (Webhooks, Dispatch Endpoint). (Completed 2025-04-20)
 
 ---
 

@@ -74,11 +74,14 @@ def test_register_tool_success():
 def test_register_tool_duplicate_name():
     """Test registering a tool with a name that already exists."""
     tool_registry.register_tool(DummyTool)
-    with pytest.raises(ValueError, match="Tool with name 'dummy_hello' already registered."):
+    # Update match pattern to include the prefix from the raised error
+    expected_error_msg = "Failed to register tool DummyTool: Tool name 'dummy_hello' conflicts with an existing registration."
+    with pytest.raises(ValueError, match=expected_error_msg):
         tool_registry.register_tool(DummyTool) # Try registering the same class again
     # Try registering a different class with the same name
     class DummyToolClone(DummyTool): pass
-    with pytest.raises(ValueError, match="Tool with name 'dummy_hello' already registered."):
+    expected_error_msg_clone = "Failed to register tool DummyToolClone: Tool name 'dummy_hello' conflicts with an existing registration."
+    with pytest.raises(ValueError, match=expected_error_msg_clone):
          tool_registry.register_tool(DummyToolClone)
     assert len(tool_registry.list_tool_definitions()) == 1
 

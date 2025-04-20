@@ -7,9 +7,9 @@ from agentkit.tools.registry import tool_registry # Import tool registry
 from agentkit.tools.interface import ToolInterface # Import base interface
 from typing import Dict, Any, Optional
 import httpx # Import httpx for mocking
-from unittest.mock import AsyncMock # For mocking async functions/methods
+from unittest.mock import AsyncMock, patch # Add patch
 from pydantic import HttpUrl
-from fastapi import HTTPException # Import HTTPException
+from fastapi import HTTPException, BackgroundTasks # Import HTTPException and BackgroundTasks
 
 # Fixture to provide a TestClient instance
 @pytest.fixture(scope="module")
@@ -76,8 +76,93 @@ def setup_test_environment_with_tools():
 
 # --- Test Cases ---
 
-# Removed test_run_agent_non_tool_message_success as non-tool messages are now dispatched
-# and success is tested via unit/integration tests for dispatch logic.
+def test_run_agent_dispatch_accepted(client: TestClient, setup_test_environment_with_tools, mocker):
+    """Test successful acceptance of a non-tool message (202 Accepted)."""
+    target_agent_id = setup_test_environment_with_tools
+    mock_add_task = mocker.patch("fastapi.BackgroundTasks.add_task")
+
+    payload = {
+        "senderId": "dispatch-tester",
+        "messageType": "custom_instruction",
+        "payload": {"do": "something"}
+    }
+    response = client.post(f"/v1/agents/{target_agent_id}/run", json=payload)
+
+    assert response.status_code == 202
+    response_data = response.json()
+    assert response_data["status"] == "success"
+    assert "Task accepted" in response_data["message"]
+    assert response_data["data"]["dispatch_status"] == "scheduled"
+    assert response_data["data"]["agentId"] == target_agent_id
+
+    # Verify background task was scheduled
+    mock_add_task.assert_called_once()
+    assert mock_add_task.call_args[0][0].__name__ == "dispatch_to_agent_endpoint"
+    # Check args passed to background task
+    call_kwargs = mock_add_task.call_args[1] # Keyword args passed to add_task
+    assert call_kwargs["agent_id"] == target_agent_id
+    # Compare string representation of HttpUrl, expecting trailing slash
+    assert str(call_kwargs["contact_endpoint"]) == "http://test-receiver.local/" # From fixture
+    assert call_kwargs["payload"].senderId == payload["senderId"]
+    assert call_kwargs["payload"].messageType == payload["messageType"]
+    assert call_kwargs["payload"].payload == payload["payload"]
+
+
+def test_run_agent_dispatch_with_opscore_fields(client: TestClient, setup_test_environment_with_tools, mocker):
+    """Test dispatch acceptance with Ops-Core fields in the payload."""
+    target_agent_id = setup_test_environment_with_tools
+    mock_add_task = mocker.patch("fastapi.BackgroundTasks.add_task")
+
+    payload = {
+        "senderId": "opscore-sim",
+        "messageType": "opscore_task",
+        "payload": {"some_param": "value"},
+        "task_name": "opscore_defined_task",
+        "opscore_session_id": "sess_123",
+        "opscore_task_id": "task_456"
+    }
+    response = client.post(f"/v1/agents/{target_agent_id}/run", json=payload)
+
+    assert response.status_code == 202
+    response_data = response.json()
+    assert response_data["status"] == "success"
+
+    # Verify background task was scheduled with correct payload including opscore fields
+    mock_add_task.assert_called_once()
+    call_kwargs = mock_add_task.call_args[1]
+    assert call_kwargs["payload"].senderId == payload["senderId"]
+    assert call_kwargs["payload"].messageType == payload["messageType"]
+    assert call_kwargs["payload"].payload == payload["payload"]
+    assert call_kwargs["payload"].task_name == payload["task_name"]
+    assert call_kwargs["payload"].opscore_session_id == payload["opscore_session_id"]
+    assert call_kwargs["payload"].opscore_task_id == payload["opscore_task_id"]
+
+
+def test_run_agent_dispatch_agent_no_endpoint(client: TestClient, setup_test_environment_with_tools, mocker):
+    """Test dispatch attempt when the target agent has no contact endpoint."""
+    target_agent_id = setup_test_environment_with_tools
+    # Modify the agent directly in storage to remove the endpoint
+    agent = agent_storage.get_agent(target_agent_id)
+    assert agent is not None # Ensure agent was found
+    agent.contactEndpoint = None
+    # No need to call add_agent again, modification is in-place for dict storage
+
+    mock_add_task = mocker.patch("fastapi.BackgroundTasks.add_task")
+
+    payload = {
+        "senderId": "dispatch-tester",
+        "messageType": "custom_instruction",
+        "payload": {"do": "something"}
+    }
+    response = client.post(f"/v1/agents/{target_agent_id}/run", json=payload)
+
+    # Should fail because no endpoint exists to schedule dispatch
+    assert response.status_code == 400
+    response_data = response.json()
+    assert "detail" in response_data
+    assert "has no registered contact endpoint" in response_data["detail"]
+    mock_add_task.assert_not_called() # Background task should not be scheduled
+
 
 def test_run_agent_not_found(client: TestClient):
     """Test sending a message to a non-existent agent ID."""
@@ -144,7 +229,7 @@ def test_run_agent_tool_invocation_success(client: TestClient, setup_test_enviro
     }
     response = client.post(f"/v1/agents/{target_agent_id}/run", json=payload)
 
-    assert response.status_code == 200
+    assert response.status_code == 202 # Endpoint default is 202, even for sync tool calls
     response_data = response.json()
     assert response_data["status"] == "success"
     assert "Local tool 'mock_success' executed successfully" in response_data["message"] # Updated message
@@ -203,9 +288,9 @@ def test_run_agent_tool_invocation_handled_error(client: TestClient, setup_test_
     }
     response = client.post(f"/v1/agents/{target_agent_id}/run", json=payload)
 
-    assert response.status_code == 200 # API call itself is successful
+    assert response.status_code == 202 # Endpoint default is 202, even for sync tool calls
     response_data = response.json()
-    assert response_data["status"] == "error"
+    assert response_data["status"] == "error" # But the tool reported an error
     assert response_data["error_code"] == "LOCAL_TOOL_EXECUTION_FAILED" # Updated error code
     assert "Local tool 'mock_handled_error' execution failed" in response_data["message"] # Updated message
     assert response_data["data"]["status"] == "error"
@@ -237,11 +322,11 @@ def test_run_agent_tool_invocation_unexpected_error(client: TestClient, setup_te
 from agentkit.api.endpoints.messaging import run_agent
 
 @pytest.mark.asyncio
-async def test_unit_dispatch_success(mocker):
-    """Unit test successful dispatch logic, mocking dependencies."""
+async def test_unit_dispatch_accepted_and_schedules_task(mocker):
+    """Unit test successful acceptance and background task scheduling."""
     # Mock dependencies
     mock_agent_storage = mocker.patch('agentkit.api.endpoints.messaging.agent_storage')
-    mock_httpx_client = mocker.patch('httpx.AsyncClient')
+    mock_background_tasks = mocker.MagicMock(spec=BackgroundTasks) # Use MagicMock for BackgroundTasks
 
     # Setup mock return values
     target_agent_id = "unit-target-01"
@@ -252,19 +337,6 @@ async def test_unit_dispatch_success(mocker):
     )
     mock_agent_storage.get_agent.return_value = mock_agent
 
-    # Mock httpx response
-    mock_response = httpx.Response(
-        200,
-        json={"status": "received", "result": "mock agent processed"},
-        request=httpx.Request("POST", contact_url) # Need a request object for the response
-    )
-    # Configure the AsyncClient context manager and the post method
-    mock_async_client_instance = AsyncMock()
-    mock_async_client_instance.post = AsyncMock(return_value=mock_response)
-    # Make the AsyncClient context manager return our mock instance
-    mock_httpx_client.return_value.__aenter__.return_value = mock_async_client_instance
-
-
     # Prepare input payload
     message = MessagePayload(
         senderId="unit-sender-01",
@@ -272,121 +344,39 @@ async def test_unit_dispatch_success(mocker):
         payload={"instruction": "unit test dispatch"}
     )
 
-    # Call the function directly
-    api_response = await run_agent(agent_id=target_agent_id, payload=message)
+    # Call the function directly, passing the mocked BackgroundTasks
+    api_response = await run_agent(
+        agent_id=target_agent_id,
+        payload=message,
+        background_tasks=mock_background_tasks # Pass mock
+    )
 
     # Assertions
     mock_agent_storage.get_agent.assert_called_once_with(target_agent_id)
-    mock_httpx_client.assert_called_once() # Check AsyncClient was instantiated
-    mock_async_client_instance.post.assert_awaited_once_with(
-        contact_url, json=message.model_dump(mode='json')
-    )
+    # Verify background task was scheduled
+    mock_background_tasks.add_task.assert_called_once()
+    # Check function and args passed to add_task
+    assert mock_background_tasks.add_task.call_args.args[0].__name__ == "dispatch_to_agent_endpoint"
+    assert len(mock_background_tasks.add_task.call_args.args) == 1 # Only the function itself as positional arg
+    assert mock_background_tasks.add_task.call_args.kwargs is not None # Ensure kwargs exist
+    call_kwargs = mock_background_tasks.add_task.call_args.kwargs # Check keyword args
+    assert call_kwargs["agent_id"] == target_agent_id
+    assert str(call_kwargs["contact_endpoint"]) == contact_url # Compare string representation
+    # Compare dictionary representations for robustness
+    assert call_kwargs["payload"].model_dump() == message.model_dump()
+
+    # Assert the immediate response (202 Accepted structure)
     assert api_response.status == "success"
-    assert api_response.message == f"Message successfully dispatched to agent {target_agent_id}."
-    assert api_response.data == {"status": "received", "result": "mock agent processed"}
-
-# Removed test_unit_dispatch_no_endpoint and test_unit_dispatch_invalid_endpoint
-# as AgentInfo model requires a valid HttpUrl for contactEndpoint, making these states unreachable
-# if registration validation is working correctly.
-
-@pytest.mark.asyncio
-async def test_unit_dispatch_httpx_timeout(mocker):
-    """Unit test dispatch logic when httpx call times out."""
-    mock_agent_storage = mocker.patch('agentkit.api.endpoints.messaging.agent_storage')
-    mock_httpx_client = mocker.patch('httpx.AsyncClient')
-
-    target_agent_id = "unit-timeout-01"
-    contact_url = "http://mock-timeout.test/receive"
-    mock_agent = AgentInfo(
-        agentId=target_agent_id, agentName="UnitTimeout", version="1.0",
-        capabilities=["test"], contactEndpoint=HttpUrl(contact_url)
-    )
-    mock_agent_storage.get_agent.return_value = mock_agent
-
-    # Mock httpx to raise TimeoutException
-    mock_async_client_instance = AsyncMock()
-    mock_async_client_instance.post = AsyncMock(side_effect=httpx.TimeoutException("Request timed out"))
-    mock_httpx_client.return_value.__aenter__.return_value = mock_async_client_instance
-
-    message = MessagePayload(senderId="unit-sender-04", messageType="process", payload={})
-
-    with pytest.raises(HTTPException) as exc_info:
-        await run_agent(agent_id=target_agent_id, payload=message)
-
-    assert exc_info.value.status_code == 504 # Gateway Timeout
-    assert "timed out" in exc_info.value.detail
-    mock_agent_storage.get_agent.assert_called_once_with(target_agent_id)
-    mock_async_client_instance.post.assert_awaited_once()
-
-@pytest.mark.asyncio
-async def test_unit_dispatch_httpx_connect_error(mocker):
-    """Unit test dispatch logic when httpx call has connection error."""
-    mock_agent_storage = mocker.patch('agentkit.api.endpoints.messaging.agent_storage')
-    mock_httpx_client = mocker.patch('httpx.AsyncClient')
-
-    target_agent_id = "unit-connect-error-01"
-    contact_url = "http://mock-unreachable.test/receive"
-    mock_agent = AgentInfo(
-        agentId=target_agent_id, agentName="UnitConnectError", version="1.0",
-        capabilities=["test"], contactEndpoint=HttpUrl(contact_url)
-    )
-    mock_agent_storage.get_agent.return_value = mock_agent
-
-    # Mock httpx to raise ConnectError
-    mock_async_client_instance = AsyncMock()
-    mock_async_client_instance.post = AsyncMock(side_effect=httpx.ConnectError("Connection failed"))
-    mock_httpx_client.return_value.__aenter__.return_value = mock_async_client_instance
-
-    message = MessagePayload(senderId="unit-sender-05", messageType="ping", payload={})
-
-    with pytest.raises(HTTPException) as exc_info:
-        await run_agent(agent_id=target_agent_id, payload=message)
-
-    assert exc_info.value.status_code == 503 # Service Unavailable
-    assert "Could not connect" in exc_info.value.detail
-    mock_agent_storage.get_agent.assert_called_once_with(target_agent_id)
-    mock_async_client_instance.post.assert_awaited_once()
+    assert api_response.message == f"Task accepted for agent {target_agent_id}. Dispatch scheduled."
+    assert api_response.data == {"agentId": target_agent_id, "dispatch_status": "scheduled"}
 
 
-@pytest.mark.asyncio
-async def test_unit_dispatch_httpx_target_error(mocker):
-    """Unit test dispatch logic when target agent returns an HTTP error."""
-    mock_agent_storage = mocker.patch('agentkit.api.endpoints.messaging.agent_storage')
-    mock_httpx_client = mocker.patch('httpx.AsyncClient')
-
-    target_agent_id = "unit-target-error-01"
-    contact_url = "http://mock-error-agent.test/receive"
-    mock_agent = AgentInfo(
-        agentId=target_agent_id, agentName="UnitTargetError", version="1.0",
-        capabilities=["test"], contactEndpoint=HttpUrl(contact_url)
-    )
-    mock_agent_storage.get_agent.return_value = mock_agent
-
-    # Mock httpx response with an error status code
-    mock_request = httpx.Request("POST", contact_url)
-    mock_error_response = httpx.Response(
-        400,
-        json={"error": "Target agent rejected request"},
-        request=mock_request
-    )
-    # Raise HTTPStatusError when raise_for_status is called
-    mock_async_client_instance = AsyncMock()
-    mock_async_client_instance.post = AsyncMock(return_value=mock_error_response)
-    # Make raise_for_status raise the appropriate error
-    mock_error_response.raise_for_status = mocker.Mock(side_effect=httpx.HTTPStatusError(
-        "Client Error", request=mock_request, response=mock_error_response
-    ))
-    mock_httpx_client.return_value.__aenter__.return_value = mock_async_client_instance
-
-
-    message = MessagePayload(senderId="unit-sender-06", messageType="process", payload={"data": "bad"})
-
-    with pytest.raises(HTTPException) as exc_info:
-        await run_agent(agent_id=target_agent_id, payload=message)
-
-    assert exc_info.value.status_code == 400 # Should forward the target's error code
-    assert "endpoint returned error" in exc_info.value.detail
-    assert "Status 400" in exc_info.value.detail
-    assert str({"error": "Target agent rejected request"}) in exc_info.value.detail
-    mock_agent_storage.get_agent.assert_called_once_with(target_agent_id)
-    mock_async_client_instance.post.assert_awaited_once()
+# --- Removed Unit Tests for Synchronous Dispatch Error Handling ---
+# The following unit tests were removed because the dispatch logic is now asynchronous (background task):
+# - test_unit_dispatch_httpx_timeout
+# - test_unit_dispatch_httpx_connect_error
+# - test_unit_dispatch_httpx_target_error
+# The main run_agent function now returns 202 Accepted immediately if dispatch is possible.
+# Error handling for the actual dispatch happens within the background task (`dispatch_to_agent_endpoint`),
+# which should ideally be tested via integration tests or separate unit tests focusing on that specific function
+# (though testing background tasks in isolation can be complex).

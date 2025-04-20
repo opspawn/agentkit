@@ -47,14 +47,56 @@ AgentKit is a Python module designed for the rapid development and prototyping o
         }
         ```
 -   **Data Model:** The structure corresponds to AgentKit's internal representation, likely based on `agentkit.core.models.AgentInfo`.
+-   **Alternative: Webhook Notification:** As an alternative or supplement to polling, Ops-Core can receive proactive notifications from AgentKit upon agent registration via a webhook. See the next section.
+
+### Receiving Agent Registration Webhooks (Optional)
+-   **Purpose:** Allows Ops-Core to be notified immediately when a new agent registers with AgentKit, avoiding the need for constant polling.
+-   **Mechanism:** If configured in the AgentKit service environment (`OPSCORE_WEBHOOK_URL`, `OPSCORE_WEBHOOK_SECRET`), AgentKit will send an asynchronous POST request to the specified Ops-Core URL after an agent successfully registers via `POST /v1/agents/register`.
+-   **Ops-Core Responsibility:** Ops-Core must implement an HTTP endpoint to receive these POST requests. This endpoint must:
+    1.  Verify the `Content-Type: application/json` header.
+    2.  Verify the HMAC-SHA256 signature using the shared `OPSCORE_WEBHOOK_SECRET`.
+    3.  Process the JSON payload containing the registration details.
+    4.  Return a `200 OK` or `202 Accepted` response promptly.
+-   **Webhook Request Details:**
+    *   **Method:** `POST`
+    *   **Headers:**
+        *   `Content-Type: application/json`
+        *   `X-AgentKit-Timestamp`: ISO 8601 UTC timestamp string (e.g., `"2024-04-20T18:15:00.123456+00:00"`)
+        *   `X-AgentKit-Signature`: Hex-encoded HMAC-SHA256 signature (see Verification below).
+    *   **Body (JSON Payload):**
+        ```json
+        {
+          "event_type": "REGISTER",
+          "agent_details": {
+            "agentId": "string",
+            "agentName": "string",
+            "version": "string",
+            "capabilities": ["string"],
+            "contactEndpoint": "string (url)",
+            "registrationTime": "string (isoformat datetime)",
+            "metadata": { ... } // Optional agent-provided metadata
+          }
+        }
+        ```
+-   **HMAC Signature Verification:** Ops-Core must verify the `X-AgentKit-Signature` to ensure the webhook is authentic.
+    1.  Read the `X-AgentKit-Timestamp` header value.
+    2.  Read the raw request body bytes.
+    3.  Concatenate the timestamp string, a literal dot (`.`), and the raw body bytes. Example (Python bytes): `f"{timestamp_header}.".encode('utf-8') + raw_body_bytes`
+    4.  Compute the HMAC-SHA256 hash of the concatenated bytes using the shared `OPSCORE_WEBHOOK_SECRET` as the key.
+    5.  Convert the computed hash to a hexadecimal string.
+    6.  Compare the computed hex signature with the value from the `X-AgentKit-Signature` header using a timing-safe comparison function (e.g., `hmac.compare_digest` in Python). If they match, the webhook is valid.
+    7.  Optionally, check if the timestamp is within an acceptable tolerance window to prevent replay attacks.
 
 ### Dispatching Tasks/Messages to Agents
 -   **Mechanism:** Ops-Core **must** dispatch tasks or commands to specific agents by sending a POST request to AgentKit's central messaging endpoint: `POST /v1/agents/{agentId}/run`.
 -   **AgentKit's Role:** AgentKit acts as a message router. Upon receiving a request at `/run`:
     1.  It identifies the target agent using the `{agentId}` from the URL.
-    2.  It looks up the agent's registered `contactEndpoint`.
-    3.  It forwards the entire JSON request body (containing sender, type, payload, context) as a POST request to the agent's `contactEndpoint`.
--   **Required Request Payload for AgentKit `/run`:** Ops-Core must structure its request body as follows:
+    2.  It checks the `messageType`.
+    3.  **If `messageType` is `tool_invocation`:** AgentKit attempts synchronous tool execution. The response to Ops-Core will contain the tool's result or an error.
+    4.  **If `messageType` is anything else (e.g., `"workflow_task"`):**
+        *   AgentKit immediately returns a `202 Accepted` response to Ops-Core.
+        *   AgentKit schedules a background task to forward the original JSON request body as a POST request to the agent's registered `contactEndpoint`.
+-   **Required Request Payload for AgentKit `/run`:** Ops-Core must structure its request body as follows (note the optional Ops-Core specific fields recognized by AgentKit):
     ```json
     {
       "senderId": "opscore_system_id", // Use a consistent, designated ID for Ops-Core
@@ -65,13 +107,27 @@ AgentKit is a Python module designed for the rapid development and prototyping o
         "task_parameters": { ... },
         // --- etc. ---
       },
-      "sessionContext": { // Optional, for tracking
-        "workflowId": "...",
-        "sessionId": "..."
-      }
+      // --- Optional Ops-Core Context Fields ---
+      // These are included in the message forwarded to the agent
+      "task_name": "string (optional)",
+      "opscore_session_id": "string (optional)",
+      "opscore_task_id": "string (optional)"
     }
     ```
--   **Response Handling:** The synchronous HTTP response (e.g., 200 OK) received from AgentKit's `/run` endpoint only confirms that AgentKit successfully *attempted* to dispatch the message to the agent's `contactEndpoint`. It **does not** indicate that the agent has successfully processed the task. The agent's processing status must be tracked via the state updates sent directly from the agent to Ops-Core (see next section).
+-   **Response Handling (Task B9 Update):**
+    *   For **tool invocations**, Ops-Core receives the synchronous result (e.g., `200 OK` with tool output, or `404 Not Found` if tool unknown).
+    *   For **other message types** (like workflow tasks), Ops-Core will receive a `202 Accepted` response immediately. This response confirms AgentKit has *accepted* the task for asynchronous dispatch to the agent. It **does not** indicate successful delivery to or processing by the agent.
+    *   The `202 Accepted` response body looks like:
+        ```json
+        {
+          "status": "success",
+          "message": "Task accepted and scheduled for asynchronous dispatch.",
+          "data": {
+            "dispatch_status": "scheduled"
+          }
+        }
+        ```
+    *   Ops-Core **must** rely on the direct Agent State Updates (see next section) to track the actual processing status of the task by the agent.
 
 ### Receiving Agent State Updates
 -   **Mechanism:** Ops-Core **must** implement and expose a dedicated API endpoint to receive direct state updates from AgentKit agents. The AgentKit SDK is configured to send these updates to: `POST /v1/opscore/agent/{agentId}/state`.
@@ -113,10 +169,10 @@ sequenceDiagram
     Note over Ops-Core Internal, Ops-Core API: Dispatch Task
     Ops-Core Internal->>Ops-Core API: Request Task Dispatch for Agent X
     Ops-Core API->>AgentKit API: POST /v1/agents/agent-X/run (Payload: Workflow Task)
-    AgentKit API-->>Ops-Core API: Dispatch Acknowledged (200 OK)
-    Ops-Core API-->>Ops-Core Internal: Dispatch OK
+    AgentKit API-->>Ops-Core API: Task Accepted (202 Accepted)
+    Ops-Core API-->>Ops-Core Internal: Dispatch Scheduled by AgentKit
 
-    Note over AgentKit API, Agent: AgentKit Forwards Message
+    Note over AgentKit API, Agent: AgentKit Dispatches Task (Async)
     AgentKit API->>Agent: POST /contactEndpoint (Workflow Task)
     Agent-->>AgentKit API: Agent Ack (e.g., 200 OK)
 
@@ -137,7 +193,14 @@ sequenceDiagram
 ## 4. Implementation Checklist for Ops-Core
 
 -   [ ] **Agent Discovery:** Implement logic to periodically poll AgentKit's `GET /v1/agents` endpoint (confirm endpoint availability/details with AgentKit team) and synchronize agent metadata (`agentId`, `contactEndpoint`, `capabilities`).
--   [ ] **Task Dispatch:** Implement logic to construct valid JSON request bodies and send POST requests to AgentKit's `POST /v1/agents/{agentId}/run` endpoint. Use a designated `senderId` for Ops-Core. Handle responses appropriately (treat 2xx as successful dispatch attempt).
+-   [ ] **Task Dispatch:** Implement logic to construct valid JSON request bodies and send POST requests to AgentKit's `POST /v1/agents/{agentId}/run` endpoint. Use a designated `senderId` for Ops-Core. Handle the `202 Accepted` response correctly, understanding it only confirms scheduling, not execution. Rely on agent state updates for actual task status.
+-   [ ] **Webhook Receiver Endpoint (Optional):** If using webhooks for agent discovery:
+    -   [ ] Implement an HTTP endpoint to receive POST requests from AgentKit.
+    -   [ ] Verify `Content-Type: application/json`.
+    -   [ ] Implement HMAC-SHA256 signature verification using the shared secret (`OPSCORE_WEBHOOK_SECRET`). Return `401 Unauthorized` or `403 Forbidden` on failure.
+    -   [ ] Validate the incoming JSON payload structure (`event_type`, `agent_details`). Return `400 Bad Request` on failure.
+    -   [ ] Process the valid registration data (e.g., update Ops-Core's agent registry).
+    -   [ ] Return `200 OK` or `202 Accepted` promptly.
 -   [ ] **State Update Endpoint:** Implement the `POST /v1/opscore/agent/{agentId}/state` endpoint:
     -   [ ] Verify `Content-Type: application/json`.
     -   [ ] Implement Authentication: Extract Bearer token from `Authorization` header and validate it. Return `401 Unauthorized` if invalid/missing.
@@ -146,7 +209,7 @@ sequenceDiagram
     -   [ ] Return Success Response: Return `200 OK` or `202 Accepted` on successful processing.
     -   [ ] Return Server Error Response: Return `500 Internal Server Error` if internal processing fails.
 -   [ ] **Error Handling:** Implement robust error handling for network issues or non-success responses when calling AgentKit APIs.
--   [ ] **Configuration:** Allow configuration of the AgentKit API base URL within Ops-Core.
+-   [ ] **Configuration:** Allow configuration of the AgentKit API base URL, Ops-Core's own API Key (for agents), and the shared Webhook Secret within Ops-Core.
 
 ## 5. Appendix: Schema Definitions (Placeholder)
 
@@ -158,9 +221,11 @@ sequenceDiagram
   "type": "object",
   "properties": {
     "senderId": {"type": "string", "description": "Identifier of the message sender (e.g., 'opscore_system_id')"},
-    "messageType": {"type": "string", "description": "Type of message (e.g., 'workflow_task')"},
+    "messageType": {"type": "string", "description": "Type of message (e.g., 'workflow_task', 'tool_invocation')"},
     "payload": {"type": "object", "description": "Message content specific to the messageType"},
-    "sessionContext": {"type": ["object", "null"], "description": "Optional context for session tracking"}
+    "task_name": {"type": ["string", "null"], "description": "Optional Ops-Core task name"},
+    "opscore_session_id": {"type": ["string", "null"], "description": "Optional Ops-Core session ID"},
+    "opscore_task_id": {"type": ["string", "null"], "description": "Optional Ops-Core task ID"}
   },
   "required": ["senderId", "messageType", "payload"]
 }
@@ -178,3 +243,27 @@ sequenceDiagram
   },
   "required": ["agentId", "timestamp", "state"]
 }
+
+### AgentKit Registration Webhook Payload Schema (Informal)
+```json
+{
+  "type": "object",
+  "properties": {
+    "event_type": {"type": "string", "enum": ["REGISTER"], "description": "Type of event"},
+    "agent_details": {
+      "type": "object",
+      "properties": {
+        "agentId": {"type": "string"},
+        "agentName": {"type": "string"},
+        "version": {"type": "string"},
+        "capabilities": {"type": "array", "items": {"type": "string"}},
+        "contactEndpoint": {"type": "string", "format": "uri"},
+        "registrationTime": {"type": "string", "format": "date-time"},
+        "metadata": {"type": "object"}
+      },
+      "required": ["agentId", "agentName", "version", "capabilities", "contactEndpoint", "registrationTime", "metadata"]
+    }
+  },
+  "required": ["event_type", "agent_details"]
+}
+```

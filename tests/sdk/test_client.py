@@ -1,5 +1,6 @@
 import pytest
 import httpx
+import json # Import json module
 from pytest_httpx import HTTPXMock
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone, timedelta
@@ -53,10 +54,13 @@ async def test_register_agent_success(client: AgentKitClient, httpx_mock: HTTPXM
     assert request is not None
     assert request.method == "POST"
     assert str(request.url) == f"{BASE_URL}{REGISTER_ENDPOINT_REL}"
-    request_json = request.read().decode()
-    assert '"agentName": "SDKTestAgent"' in request_json
-    assert '"contactEndpoint": "http://sdk-agent.test/"' in request_json
-    assert '"metadata": {' in request_json
+    # Parse JSON and assert specific values
+    request_data = json.loads(request.read().decode())
+    assert request_data.get("agentName") == "SDKTestAgent"
+    assert request_data.get("capabilities") == ["sdk"]
+    assert request_data.get("version") == "0.1"
+    assert request_data.get("contactEndpoint") == "http://sdk-agent.test/"
+    assert request_data.get("metadata") == {"desc": "test"}
 
 async def test_register_agent_api_error(client: AgentKitClient, httpx_mock: HTTPXMock):
     """Test handling of API error (e.g., 409 Conflict) during async registration."""
@@ -130,10 +134,12 @@ async def test_send_message_success(client: AgentKitClient, httpx_mock: HTTPXMoc
     assert request is not None
     assert request.method == "POST"
     assert str(request.url) == run_endpoint_abs
-    request_json = request.read().decode()
-    assert f'"senderId": "{sender_id}"' in request_json
-    assert f'"messageType": "{message_type}"' in request_json
-    assert '"payload": {' in request_json
+    # Parse JSON and assert specific values
+    request_data = json.loads(request.read().decode())
+    assert request_data.get("senderId") == sender_id
+    assert request_data.get("messageType") == message_type
+    assert request_data.get("payload") == payload
+    assert "sessionContext" not in request_data # Ensure None context was omitted
 
 async def test_send_message_api_error_404(client: AgentKitClient, httpx_mock: HTTPXMock):
     """Test sending async message to non-existent agent (404)."""
@@ -221,11 +227,12 @@ async def test_report_state_success(mock_dt, mock_getenv, client: AgentKitClient
     assert request.headers["Authorization"] == f"Bearer {OPSCORE_API_KEY}"
     assert request.headers["Content-Type"] == "application/json"
 
-    request_json = request.read().decode()
-    assert f'"agentId": "{agent_id}"' in request_json
-    assert f'"state": "{state}"' in request_json
-    assert f'"timestamp": "{mock_now.isoformat()}"' in request_json
-    assert '"details": {"task": "processing data"}' in request_json
+    # Parse JSON and assert specific values
+    request_data = json.loads(request.read().decode())
+    assert request_data.get("agentId") == agent_id
+    assert request_data.get("state") == state
+    assert request_data.get("timestamp") == mock_now.isoformat()
+    assert request_data.get("details") == details
 
 @patch('agentkit.sdk.client.os.getenv')
 async def test_report_state_missing_config_url(mock_getenv, client: AgentKitClient):

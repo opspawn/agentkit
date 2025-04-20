@@ -205,6 +205,11 @@ if __name__ == "__main__":
 
 Refer to the `examples/opscore_aware_agent.py` script for a more complete example of an agent implementing state reporting within a FastAPI application.
 
+**Note on Recent Ops-Core Integration Features:**
+*   The AgentKit service can now send webhook notifications to Ops-Core upon agent registration.
+*   The `/run` endpoint now handles non-tool messages asynchronously, returning `202 Accepted` immediately.
+*   For full details on these features and how they impact Ops-Core integration, see the main [Ops-Core Integration Guide](opscore_integration.md).
+
 ---
 
 This concludes the tutorial. You can now integrate powerful language model capabilities and make your agents integrate with the Ops-Core lifecycle management system!

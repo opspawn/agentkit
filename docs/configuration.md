@@ -48,6 +48,12 @@ OPSCORE_API_URL=http://localhost:8080 # Replace with actual Ops-Core URL if diff
 # API Key for authenticating with the Ops-Core API
 OPSCORE_API_KEY=your_opscore_api_key_here
 
+# --- Ops-Core Webhook Configuration (Required for AgentKit service to notify Ops-Core) ---
+# URL where AgentKit should send webhook notifications (e.g., agent registration)
+OPSCORE_WEBHOOK_URL=http://localhost:8080/v1/opscore/internal/agent/notify # Replace with actual Ops-Core webhook receiver URL
+# Shared secret used to generate HMAC signatures for webhook requests (AgentKit -> Ops-Core)
+OPSCORE_WEBHOOK_SECRET=your_very_secret_webhook_key # Replace with a strong, unique secret
+
 # --- AgentKit API Service (Optional Overrides) ---
 # These typically do not need to be set, as defaults are handled
 # by the FastAPI application and Docker Compose.
@@ -71,6 +77,11 @@ OPSCORE_API_KEY=your_opscore_api_key_here
 -   **Purpose:** Allow AgentKit agents (via the SDK) to report their state to the Ops-Core lifecycle management system.
 -   **Used By:** `AgentKitClient.report_state_to_opscore` method.
 -   **Context:** Required by any agent that needs to integrate with Ops-Core state tracking, particularly when running the planned `examples/opscore_aware_agent.py`.
+-   `OPSCORE_WEBHOOK_URL`: The URL endpoint on the Ops-Core service where AgentKit should send webhook notifications (e.g., for agent registration/deregistration events).
+-   `OPSCORE_WEBHOOK_SECRET`: A shared secret key used by the AgentKit service to generate an HMAC-SHA256 signature for webhook requests sent to `OPSCORE_WEBHOOK_URL`. This allows Ops-Core to verify the authenticity and integrity of incoming webhooks.
+-   **Purpose (Webhooks):** Enable the AgentKit service to proactively notify Ops-Core about agent lifecycle events (currently registration).
+-   **Used By:** AgentKit API service (specifically, the registration module/endpoint).
+-   **Context (Webhooks):** Required if you want Ops-Core to be automatically updated when agents register with AgentKit. The AgentKit service uses the secret to sign the request, sending the signature in the `X-AgentKit-Signature` header and a timestamp in the `X-AgentKit-Timestamp` header. Ops-Core must be configured with the same secret to validate the signature.
 
 ### Usage Contexts
 

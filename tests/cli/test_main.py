@@ -24,7 +24,8 @@ runner = CliRunner()
 def test_register_success_basic():
     """Test successful agent registration with minimal required options."""
     mock_client_instance = MagicMock(spec=AgentKitClient)
-    mock_client_instance.register_agent.return_value = "agent-123" # Simulate successful registration
+    # Configure the async method mock to return a simple value, not a coroutine
+    mock_client_instance.register_agent = MagicMock(return_value="agent-123")
 
     # Patch the get_client function to return our mock
     with patch('agentkit.cli.main.get_client', return_value=mock_client_instance) as mock_get_client:
@@ -55,7 +56,7 @@ def test_register_success_basic():
 def test_register_success_with_options():
     """Test successful agent registration with capabilities and metadata."""
     mock_client_instance = MagicMock(spec=AgentKitClient)
-    mock_client_instance.register_agent.return_value = "agent-456"
+    mock_client_instance.register_agent = MagicMock(return_value="agent-456") # Configure async mock
     metadata_dict = {"description": "A test agent", "type": "tester"}
     metadata_json = json.dumps(metadata_dict)
 
@@ -120,7 +121,8 @@ def test_register_api_error():
     """Test registration failure when the API client raises AgentKitError."""
     mock_client_instance = MagicMock(spec=AgentKitClient)
     error_response = {"detail": "Registration failed"}
-    mock_client_instance.register_agent.side_effect = AgentKitError("API Error", response_data=error_response)
+    # Configure side_effect on the MagicMock directly
+    mock_client_instance.register_agent = MagicMock(side_effect=AgentKitError("API Error", response_data=error_response))
 
     with patch('agentkit.cli.main.get_client', return_value=mock_client_instance):
         result = runner.invoke(app, [
@@ -137,7 +139,7 @@ def test_register_api_error():
 def test_register_unexpected_error():
     """Test registration failure on unexpected client exception."""
     mock_client_instance = MagicMock(spec=AgentKitClient)
-    mock_client_instance.register_agent.side_effect = Exception("Something broke")
+    mock_client_instance.register_agent = MagicMock(side_effect=Exception("Something broke")) # Configure async mock
 
     with patch('agentkit.cli.main.get_client', return_value=mock_client_instance):
         result = runner.invoke(app, [
@@ -157,7 +159,7 @@ def test_send_success_basic():
     """Test successful message sending with minimal required options."""
     mock_client_instance = MagicMock(spec=AgentKitClient)
     api_response = {"status": "received", "result": "processed"}
-    mock_client_instance.send_message.return_value = api_response
+    mock_client_instance.send_message = MagicMock(return_value=api_response) # Configure async mock
     payload_dict = {"command": "do_something"}
     payload_json = json.dumps(payload_dict)
 
@@ -186,7 +188,7 @@ def test_send_success_with_session():
     """Test successful message sending with session context."""
     mock_client_instance = MagicMock(spec=AgentKitClient)
     api_response = {"status": "ok"}
-    mock_client_instance.send_message.return_value = api_response
+    mock_client_instance.send_message = MagicMock(return_value=api_response) # Configure async mock
     payload_dict = {"query": "status"}
     payload_json = json.dumps(payload_dict)
     session_dict = {"user_id": "user-xyz", "thread_id": "thread-1"}
@@ -270,7 +272,7 @@ def test_send_api_error():
     """Test send failure when the API client raises AgentKitError."""
     mock_client_instance = MagicMock(spec=AgentKitClient)
     error_response = {"detail": "Target agent not found"}
-    mock_client_instance.send_message.side_effect = AgentKitError("Send Failed", response_data=error_response)
+    mock_client_instance.send_message = MagicMock(side_effect=AgentKitError("Send Failed", response_data=error_response)) # Configure async mock
     payload_json = json.dumps({"command": "test"})
 
     with patch('agentkit.cli.main.get_client', return_value=mock_client_instance):
@@ -289,7 +291,7 @@ def test_send_api_error():
 def test_send_unexpected_error():
     """Test send failure on unexpected client exception."""
     mock_client_instance = MagicMock(spec=AgentKitClient)
-    mock_client_instance.send_message.side_effect = Exception("Network issue")
+    mock_client_instance.send_message = MagicMock(side_effect=Exception("Network issue")) # Configure async mock
     payload_json = json.dumps({"command": "test"})
 
     with patch('agentkit.cli.main.get_client', return_value=mock_client_instance):
