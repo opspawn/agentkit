@@ -30,7 +30,7 @@ def live_agent_client(): # Make this fixture synchronous
     return client
 
 @pytest.fixture(scope="module")
-async def registered_dummy_agent_id(live_agent_client: AgentKitClient): # Take the sync client instance
+async def registered_dummy_agent_id(live_agent_client: AgentKitClient): # Take the client instance
     """Fixture to register a dummy agent once per module for API calls."""
     # Use the provided client instance directly
     client = live_agent_client
@@ -38,8 +38,8 @@ async def registered_dummy_agent_id(live_agent_client: AgentKitClient): # Take t
     dummy_agent_name = f"live-test-dummy-{uuid.uuid4()}"
     dummy_endpoint = HttpUrl("http://localhost:9999/dummy-live")
     try:
-        agent_id = await asyncio.to_thread( # Run sync SDK call in thread
-            client.register_agent, # Use the awaited client instance
+        # Directly await the async SDK method
+        agent_id = await client.register_agent(
             agent_name=dummy_agent_name,
             capabilities=["live_test"],
             version="1.0",
@@ -61,9 +61,10 @@ async def test_generic_llm_tool_live_call(live_agent_client: AgentKitClient, reg
     1. AgentKit API running (e.g., via `docker-compose up api`).
     2. A valid .env file in the project root with OPENAI_API_KEY.
     """
-    # Get the sync client directly, the agent ID fixture is awaited by pytest
-    client = live_agent_client # No await needed here
-    dummy_agent_id: str = registered_dummy_agent_id # Remove await here
+    # Get the client instance
+    client = live_agent_client
+    # The fixture already returns the awaited ID
+    dummy_agent_id: str = registered_dummy_agent_id
 
     tool_payload = {
         "tool_name": "generic_llm_completion",
@@ -79,8 +80,8 @@ async def test_generic_llm_tool_live_call(live_agent_client: AgentKitClient, reg
 
     print(f"\nAttempting live call to model '{LIVE_LLM_MODEL}' via tool...")
     try:
-        response_data = await asyncio.to_thread( # Run sync SDK call in thread
-            client.send_message,
+        # Directly await the async SDK method
+        response_data = await client.send_message(
             target_agent_id=dummy_agent_id,
             sender_id="live_test_runner",
             message_type="tool_invocation",

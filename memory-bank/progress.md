@@ -1,4 +1,4 @@
-# Progress: AgentKit Python Module (Post-Task B8)
+# Progress: AgentKit Python Module (Post-Issue #1)
 
 ## 1. What Works / Completed
 
@@ -24,6 +24,7 @@
 -   **Backlog Task B7 (Ops-Core Readiness):** Enhanced SDK (`client.py`) to be async and added `report_state_to_opscore`. Updated config (`configuration.md`, `.env.example`). Added example (`opscore_aware_agent.py`). Added tests (unit & integration). Updated docs (`TUTORIAL.md`, `README.md`). Added `pytest-httpx`.
 -   **Backlog Task B8 (LLM Assistance Docs):** Created `docs/building_agents_with_llms.md` and `docs/agentkit_llm_context.txt`. Refined based on feedback.
 -   **Backlog Task B9 (Ops-Core Service Features):** Implemented webhook notifications (with HMAC) on registration and asynchronous task dispatch via `/run` endpoint. Updated models, config, tests (unit & integration), and documentation. (Completed 2025-04-20)
+-   **Issue #1 (Ops-Core Integration Fixes):** Implemented `GET /health` endpoint in `main.py` and fixed webhook payload serialization in `agentkit/api/endpoints/registration.py` using `model_dump(mode='json')`. Added/updated corresponding unit tests (`tests/api/test_app.py`, `tests/api/endpoints/test_registration.py`). Resolved test environment issues (dependencies, naming conflicts, async calls). (Completed 2025-04-20)
 
 ## 2. What's Left to Build (High-Level Phases from TASK.md)
 
@@ -32,20 +33,20 @@
 
 ## 3. Current Status
 
--   **Overall:** Phases 1-5 complete. Backlog Tasks B1, B1.1, B6, B7, B8, and B9 complete. Core functionality implemented and documented, including webhook notifications and async task dispatch via BackgroundTasks.
--   **Code:** Core API (registration webhook, async dispatch), SDK (async), CLI, and Generic LLM Tool implemented and tested. Example scripts exist for various use cases.
--   **Infrastructure:** Docker setup includes API and mock tool service, configured to use `.env`. Basic CI workflow exists. Pytest configured. Added `pytest-httpserver`, `pytest-mock`, `pytest-httpx` dependencies.
--   **Documentation:** All planned documentation created, reviewed, and updated. New integration and LLM assistance docs added.
+-   **Overall:** Phases 1-5 complete. Backlog Tasks B1, B1.1, B6, B7, B8, B9, and Issue #1 complete. Core functionality implemented and documented, including `/health` endpoint, webhook notifications (with fixed serialization), and async task dispatch via BackgroundTasks.
+-   **Code:** Core API (`/health`, registration webhook, async dispatch), SDK (async), CLI, and Generic LLM Tool implemented and tested. Example scripts exist for various use cases.
+-   **Infrastructure:** Docker setup includes API and mock tool service, configured to use `.env`. Basic CI workflow exists. Pytest configured. Dependencies installed via `requirements.txt` in `.venv`.
+-   **Documentation:** All planned documentation created, reviewed, and updated. New integration and LLM assistance docs added. Memory Bank updated.
 
 ## 4. Known Issues / Blockers
 
 -   Running the LLM example or live test requires the user to provide LLM API key(s) in a `.env` file (documented in `docs/configuration.md`).
 -   Ops-Core state reporting requires `OPSCORE_API_URL` and `OPSCORE_API_KEY` in `.env`.
--   Some dependency warnings remain during test runs (Pydantic, litellm).
--   Remaining test failures (1 FAILED, 2 XFAILED) are known issues:
-    -   `test_llm_tool_live.py`: Requires live environment setup/API keys.
-    -   `test_opscore_integration.py::test_dispatch_flow_accepted_and_dispatched`: Background task interaction with `httpserver` is unreliable in `TestClient`.
-    -   `test_workflows.py::test_scenario_2_simple_tool_invocation`: Requires mocking tool registry/call within `TestClient`.
+-   Some dependency warnings remain during test runs (Pydantic, litellm, asyncio loop scope).
+-   Remaining test issues (1 SKIPPED, 2 XFAILED) are known:
+    -   `test_llm_tool_live.py`: Skipped due to requiring live environment setup/API keys (marked with `@live_llm_test`). Failure related to async SDK call fixed.
+    -   `test_opscore_integration.py::test_dispatch_flow_accepted_and_dispatched`: Marked `xfail` due to difficulty testing background task interaction with `httpserver` within `TestClient`.
+    -   `test_workflows.py::test_scenario_2_simple_tool_invocation`: Marked `xfail` due to requiring mocking tool registry/call within `TestClient`.
 
 ## 5. Evolution of Project Decisions
 

@@ -30,19 +30,14 @@ async def notify_opscore_webhook(agent_info: AgentInfo):
         return
 
     try:
-        # Ensure agent_details matches the expected Ops-Core structure
-        # Assuming AgentInfo fields map directly for now, adjust if needed based on Ops-Core spec
-        agent_details = {
-            "agentId": agent_info.agentId,
-            "agentName": agent_info.agentName,
-            "version": agent_info.version,
-            "capabilities": agent_info.capabilities,
-            "contactEndpoint": str(agent_info.contactEndpoint), # Ensure URL is string
-            "metadata": agent_info.metadata or {} # Ensure metadata is at least an empty dict
-        }
+        # Convert the entire AgentInfo object to a JSON-serializable dict
+        # Use mode='json' to handle types like UUID, datetime, etc. correctly for JSON.
+        serializable_agent_details = agent_info.model_dump(mode='json')
+
+        # Construct the final payload for the webhook
         payload = {
             "event_type": "REGISTER",
-            "agent_details": agent_details
+            "agent_details": serializable_agent_details # Use the dumped dict
         }
         payload_bytes = json.dumps(payload, separators=(',', ':')).encode('utf-8')
 

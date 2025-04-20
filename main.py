@@ -24,6 +24,13 @@ async def read_root():
     """
     return {"message": "Welcome to AgentKit API"}
 
+@app.get("/health")
+async def health_check():
+    """
+    Standard health check endpoint.
+    """
+    return {"status": "healthy"}
+
 # Include API Routers
 app.include_router(registration.router, prefix="/v1", tags=["Registration"])
 app.include_router(messaging.router, prefix="/v1", tags=["Messaging"])

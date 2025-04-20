@@ -192,20 +192,16 @@ async def test_register_agent_triggers_webhook_success(
 
     # Verify signature
     # Construct the expected payload *using the agent_info object passed to the task*
-    # This ensures consistency with how the actual webhook function builds it.
+    # and its model_dump method, mirroring the main code change.
     agent_info_for_payload = agent_info_arg # From line 170
-    expected_agent_details = {
-        "agentId": agent_info_for_payload.agentId,
-        "agentName": agent_info_for_payload.agentName,
-        "version": agent_info_for_payload.version,
-        "capabilities": agent_info_for_payload.capabilities,
-        "contactEndpoint": str(agent_info_for_payload.contactEndpoint), # Use string form
-        "metadata": agent_info_for_payload.metadata or {} # Handle potential None
-    }
+    # Use model_dump(mode='json') to get the serializable dictionary
+    expected_serializable_agent_details = agent_info_for_payload.model_dump(mode='json')
+
     expected_payload_dict = {
         "event_type": "REGISTER",
-        "agent_details": expected_agent_details
+        "agent_details": expected_serializable_agent_details # Use the dumped dict
     }
+    # Re-encode the payload based on the dumped dictionary for signature verification
     payload_bytes = json.dumps(expected_payload_dict, separators=(',', ':')).encode('utf-8')
     # Construct signature string consistently with the main code
     sig_string = str(fixed_time).encode('utf-8') + b'.' + payload_bytes

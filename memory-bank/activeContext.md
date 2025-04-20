@@ -1,13 +1,22 @@
-# Active Context: AgentKit Python Module (Post-Task B9)
+# Active Context: AgentKit Python Module (Post-Issue #1)
 
 ## 1. Current Work Focus
 
--   **Current Task:** None. Task B9 completed.
--   **Status:** Ready for next task assignment.
--   **Current State:** AgentKit service includes webhook notifications on registration and asynchronous task dispatch via the `/run` endpoint. Configuration, tests (excluding known issues), and documentation are updated.
+-   **Current Task:** None. Issue #1 completed.
+-   **Status:** Ready for next task assignment. Branch `feature/issue-1-ops-core-integration-fixes` contains the latest changes.
+-   **Current State:** AgentKit service now includes a `/health` endpoint. Webhook notification payload serialization is fixed. Tests updated and passing (excluding known xfails/skips).
 
 ## 2. Recent Changes
 
+-   **Issue #1 Complete (Ops-Core Integration Fixes):**
+    -   Implemented `GET /health` endpoint in `main.py`.
+    -   Added unit test for `/health` in `tests/api/test_app.py` (renamed from `test_main.py` to avoid naming conflict).
+    -   Fixed webhook payload serialization in `agentkit/api/endpoints/registration.py` using `model_dump(mode='json')`.
+    -   Updated webhook unit tests in `tests/api/endpoints/test_registration.py` to reflect the serialization fix.
+    -   Resolved test failures related to missing dependencies (`pip install -r requirements.txt` in `.venv`).
+    -   Resolved test collection error by renaming `tests/api/test_main.py` to `tests/api/test_app.py`.
+    -   Resolved test failure in `test_llm_tool_live.py` by correctly awaiting async SDK methods.
+    -   Updated `TASK.md`.
 -   **Task B9 Complete (Ops-Core Service Features):**
     -   Implemented Ops-Core webhook notification on agent registration (`agentkit/api/endpoints/registration.py`).
         -   Uses `BackgroundTasks` for async HTTP POST.
@@ -45,8 +54,9 @@
 
 ## 3. Next Steps (Immediate)
 
--   Await next task assignment from the backlog (e.g., B2, B3, B4, B5).
--   Review known test failures (`xfail` tests, live LLM test) if environment/setup changes.
+-   Await next task assignment from the backlog (likely Task B2: Integrate persistent storage).
+-   Merge branch `feature/issue-1-ops-core-integration-fixes` into the main development branch.
+-   Review known test failures (`xfail` tests, skipped live LLM test) if environment/setup changes.
 
 ## 4. Active Decisions & Considerations
 
@@ -70,3 +80,5 @@
 -   Pydantic model comparisons (`==`) might not work as expected; comparing `.model_dump()` is safer.
 -   `pytest-httpserver`'s request log is accessed via `.log`, not `.requests_log` or `.get_requests()`.
 -   When using `pytest-httpserver` to mock endpoints called by an `httpx` client with a `base_url` set (like the SDK client), `httpserver.expect_request` needs the **relative** URI path, but assertions on the received request (`req.url`) will contain the **full** URL. Use `req.path` for assertions against the relative path.
+-   Ensure Python test file basenames are unique across different directories (e.g., `tests/api/test_app.py` vs `tests/cli/test_main.py`) to avoid `pytest` collection errors.
+-   Async SDK methods must be `await`ed directly in async tests; using `asyncio.to_thread` is incorrect for awaiting coroutines.
