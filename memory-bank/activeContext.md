@@ -45,7 +45,7 @@
 
 ## 3. Next Steps (Immediate)
 
--   Await next task assignment from the backlog (e.g., B2, B3, B4, B5, or full async dispatch for B1).
+-   Await next task assignment from the backlog (e.g., B2, B3, B4, B5).
 -   Review known test failures (`xfail` tests, live LLM test) if environment/setup changes.
 
 ## 4. Active Decisions & Considerations

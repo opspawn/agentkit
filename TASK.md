@@ -75,7 +75,7 @@ This TASK.md document provides a detailed, step-by-step checklist for developing
 ---
 
 ## Backlog / Future Enhancements
-- [~] **Task B1:** Implement messaging support (Synchronous dispatch to agent endpoints implemented; async support pending).
+- [x] **Task B1:** Implement messaging support (Synchronous dispatch implemented previously; Asynchronous dispatch via BackgroundTasks implemented in B9). (Completed 2025-04-20)
   - [x] **Task B1.1:** Create Requester/Responder examples (`examples/requester_agent.py`, `examples/responder_agent.py`) demonstrating synchronous dispatch. Updated `examples/README.md`.
 - [ ] **Task B2:** Integrate persistent storage options by migrating from in-memory storage to a dedicated database.
 - [ ] **Task B3:** Develop additional debugging tools and a web-based log inspection dashboard.
